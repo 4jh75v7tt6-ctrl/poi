@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="poi-app" content="local-v1">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#212121" media="(prefers-color-scheme: dark)">
+  <script>try{var t=localStorage.getItem("poi-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+  <title>Guide de POI · Atelier d’IA</title>
+  <style>
+    :root{color-scheme:light;--paper:#fff;--surface:#f7f7f8;--ink:#0d0d0d;--muted:#686868;--accent:#171717;--line:#e5e5e5}
+    :root[data-theme="dark"]{color-scheme:dark;--paper:#212121;--surface:#303030;--ink:#ececec;--muted:#b4b4b4;--accent:#ececec;--line:#424242}
+    @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--paper:#212121;--surface:#303030;--ink:#ececec;--muted:#b4b4b4;--accent:#ececec;--line:#424242}}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65;font-size:16px}
+    header,main,footer{max-width:780px;margin:auto;padding:24px}header{padding-top:max(28px,env(safe-area-inset-top));padding-bottom:12px}
+    .back{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-weight:650;text-decoration:none;min-height:44px}.tag{font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:750;margin:24px 0 8px}
+    h1{font-size:clamp(2rem,8vw,3.2rem);line-height:1.1;letter-spacing:-.045em;margin:0 0 20px;font-weight:760}h2{font-size:1.3rem;line-height:1.3;margin:0 0 16px;letter-spacing:-.025em}h3{font-size:1rem;margin:22px 0 8px}p{margin:12px 0}.lead{font-size:1.08rem;color:var(--muted);max-width:620px}
+    section{background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:24px;margin:0 0 18px}ol,ul{padding-left:23px;margin:12px 0}li{padding-left:3px;margin:10px 0}strong{font-weight:720}a{color:var(--accent);text-underline-offset:3px;overflow-wrap:anywhere}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.88em;background:var(--surface);padding:3px 6px;border-radius:6px;overflow-wrap:anywhere}
+    .note{border-left:3px solid var(--accent);background:var(--surface);padding:14px 16px;border-radius:0 12px 12px 0;margin:18px 0;color:var(--ink)}.examples{background:var(--surface);border-radius:14px;padding:14px 16px}.examples p{margin:7px 0}.steps{list-style:none;padding:0;counter-reset:step}.steps li{position:relative;min-height:40px;padding-left:40px;counter-increment:step}.steps li:before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--surface);color:var(--accent);font-size:.85rem;font-weight:750}
+    .tabs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.tabs div{border:1px solid var(--line);border-radius:14px;padding:15px}.tabs strong{display:block;color:var(--accent)}.tabs p{font-size:.93rem;margin:5px 0 0}footer{color:var(--muted);font-size:.86rem;padding-top:8px;padding-bottom:max(28px,env(safe-area-inset-bottom))}.small{font-size:.91rem;color:var(--muted)}:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+    @media(max-width:460px){header,main,footer{padding-left:18px;padding-right:18px}section{padding:20px;border-radius:18px}.tabs{grid-template-columns:1fr}h1{max-width:330px}}
+    @media print{body{background:#fff}header,main,footer{max-width:none;padding:12px 0}.back{display:none}section{break-inside:avoid;box-shadow:none}a{color:inherit}}
+  </style>
+</head>
+<body>
+  <header>
+    <a class="back" href="./">← Revenir à POI</a>
+    <p class="tag">Le guide · Version 0.1.0</p>
+    <h1>Votre espace POI.</h1>
+    <p class="lead">POI est une base de travail légère pour expérimenter sur votre iPhone : un petit modèle qui s’entraîne, une identité réglable et une mémoire que vous pouvez consulter et exporter.</p>
+  </header>
+  <main>
+    <section>
+      <h2>1. Installer sur l’iPhone</h2>
+      <ol class="steps">
+        <li><strong>Ouvrez le lien de POI dans Safari, avec Internet.</strong> Si le lien privé demande une connexion ChatGPT, connectez-vous à votre compte pour accéder à la page.</li>
+        <li>Touchez <strong>Partager</strong>, puis <strong>Sur l’écran d’accueil</strong> ou <strong>Ajouter à l’écran d’accueil</strong>. Si l’option apparaît, activez <strong>Ouvrir comme app web</strong>, puis touchez <strong>Ajouter</strong>.</li>
+        <li><strong>Ouvrez POI depuis cette nouvelle icône</strong>, toujours avec Internet. Attendez que l’app confirme que ses fichiers sont prêts pour le mode hors ligne.</li>
+        <li><strong>Vérifiez ensuite en mode avion</strong> : fermez puis rouvrez POI depuis son icône et essayez une conversation. Le mode hors ligne est confirmé par cette vérification sur votre appareil.</li>
+      </ol>
+      <div class="note">Voir « connecté » ne prouve pas que les fichiers sont enregistrés. Si le statut hors ligne n’est pas prêt, restez connecté et rechargez. Une page d’authentification ou un hébergement qui bloque le service worker peut empêcher l’installation hors ligne.</div>
+      <p class="small">Utilisez la même icône pour garder le même espace de données. Safari et l’app ajoutée à l’écran d’accueil peuvent utiliser des stockages distincts. Commencez votre travail après l’ajout, ou transférez-le par export/import.</p>
+    </section>
+
+    <section>
+      <h2>2. Quatre espaces pour expérimenter</h2>
+      <div class="tabs">
+        <div><strong>Conversation</strong><p>Écrivez à POI, voyez sa réponse et corrigez une intention mal reconnue.</p></div>
+        <div><strong>Apprendre</strong><p>Ajoutez des exemples étiquetés, lancez l’entraînement et observez les mesures.</p></div>
+        <div><strong>Mémoire</strong><p>Consultez les faits conservés et gérez ce que vous lui avez confié.</p></div>
+        <div><strong>Atelier</strong><p>Modifiez son identité, examinez ses paramètres, exportez ou restaurez votre travail.</p></div>
+      </div>
+      <p>Dans <strong>Atelier → Texte et apparence</strong>, choisissez le thème clair, le thème sombre ou le réglage automatique de l’iPhone. La zone de brouillon garde une écriture de 16 pixels, autorise les retours à la ligne et n’envoie le texte qu’avec le bouton flèche sur iPhone.</p>
+      <p>Le modèle classe les phrases dans <strong>six intentions</strong> : identité, rôle, capacités, mémorisation, rappel et salutation. Les réponses sont composées par le programme à partir de cette intention, des réglages et de la mémoire. POI ne génère pas une réponse libre à n’importe quel sujet.</p>
+      <p>Dans <strong>Atelier</strong>, vous pouvez changer le nom et les éléments d’identité proposés. L’utilisation de « je » correspond à un rôle programmé. Elle n’est pas une mesure de conscience ou d’expérience subjective.</p>
+    </section>
+
+    <section>
+      <h2>3. Essayer, puis corriger</h2>
+      <p>Commencez avec des demandes courtes et une seule intention à la fois :</p>
+      <div class="examples">
+        <p>« Bonjour »</p>
+        <p>« Qui es-tu ? »</p>
+        <p>« Quel est ton rôle ? »</p>
+        <p>« Que peux-tu faire ? »</p>
+      </div>
+      <p>Si une phrase est mal classée, utilisez l’action de correction proposée pour choisir l’intention attendue. Vous pouvez aussi ajouter une formulation dans <strong>Apprendre</strong>, avec sa bonne étiquette, puis relancer l’entraînement.</p>
+      <p>Variez les formulations : « Comment t’appelles-tu ? » et « Quel est ton nom ? » sont deux exemples de la même intention. Des exemples variés et correctement étiquetés sont plus utiles que de nombreuses copies de la même phrase.</p>
+      <div class="note"><strong>Gardez POI ouverte pendant l’entraînement.</strong> iOS peut suspendre une page en arrière-plan. Attendez la fin et la confirmation de sauvegarde avant de quitter l’app.</div>
+      <p>Le petit modèle ajuste réellement ses paramètres numériques à partir des exemples. Chaque séance repart de poids nuls et utilise tous les exemples conservés ; la version active reste disponible jusqu’à l’adoption du nouvel essai. La simple conversation n’entraîne pas automatiquement un grand modèle de langage. Le score de classement affiché décrit la préférence du classifieur entre ses catégories ; il ne prouve pas que la réponse est vraie.</p>
+      <h3>Comprendre les résultats</h3>
+      <p>Le score d’entraînement mesure les exemples utilisés pour apprendre. Le jeu d’évaluation réservé utilise d’autres phrases. Ne copiez pas ces phrases dans l’entraînement si vous voulez conserver une mesure distincte. Après de nombreux réglages guidés par ce même jeu, prévoyez de nouveaux exemples pour une évaluation indépendante.</p>
+    </section>
+
+    <section>
+      <h2>4. Donner une mémoire à POI</h2>
+      <p>Une information mémorisée est une donnée conservée par l’application. Elle ne modifie pas, à elle seule, les paramètres du classifieur.</p>
+      <div class="examples">
+        <p><strong>Pour retenir :</strong> « Retiens : couleur préférée = bleu »</p>
+        <p><strong>Pour rappeler :</strong> « Que sais-tu sur couleur préférée ? »</p>
+      </div>
+      <p>Vérifiez le fait dans <strong>Mémoire</strong>. Vous pouvez aussi écrire « Retiens que ma couleur préférée est bleu ». Pour le rappel, reprenez le nom exact du fait après « Que sais-tu sur ». Si votre formulation n’est pas reconnue, utilisez les contrôles de mémoire de l’app ou les commandes ci-dessus. POI ne dispose pas d’une compréhension générale du langage.</p>
+      <p>Les faits, les exemples, les paramètres appris et l’historique sont enregistrés sur cet appareil. Le navigateur peut supprimer des données lors d’un nettoyage, d’un manque d’espace ou de certains changements de site. <strong>Un export régulier reste nécessaire pour conserver votre travail.</strong></p>
+    </section>
+
+    <section>
+      <h2>5. Exporter tout le travail conservé</h2>
+      <p>Dans <strong>Atelier</strong>, utilisez <strong>Export complet</strong>. Vous obtenez une archive ZIP contenant une sauvegarde JSON restaurable, le rapport <code>rapport-poi-complet.html</code> lisible, les tableaux CSV et le manifeste décrivant l’export.</p>
+      <p>L’archive détaille les données effectivement conservées : conversations, faits, exemples, entraînements, mesures, journal, paramètres du modèle et évaluations. Les limites de rétention et les éventuels compteurs sont indiqués ; un export ne peut pas reconstituer des données déjà effacées ou qui n’ont jamais été enregistrées.</p>
+      <p class="small">Limites de cette version : 2 000 messages, 5 000 événements et 100 entraînements conservés. Quand ces historiques sont pleins, les entrées les plus anciennes sont retirées et comptées. La mémoire est limitée à 100 faits, et le jeu d’apprentissage à 400 exemples ; un ajout au-delà de ces limites est refusé.</p>
+      <ol class="steps">
+        <li>Enregistrez le ZIP dans <strong>Fichiers</strong> sur l’iPhone. Selon Safari, ouvrez la liste des téléchargements ou choisissez <strong>Enregistrer dans Fichiers</strong> depuis le menu de partage.</li>
+        <li>Touchez le fichier ZIP dans <strong>Fichiers</strong> pour extraire son contenu. Le rapport HTML permet de relire le travail ; les CSV peuvent être ouverts dans un tableur.</li>
+        <li>Pour restaurer, revenez dans <strong>Atelier</strong>, choisissez l’import et sélectionnez <code>sauvegarde-poi.json</code> dans le dossier extrait.</li>
+      </ol>
+      <div class="note"><strong>L’import remplace l’état actuel.</strong> Exportez d’abord votre session si vous voulez la conserver. Le ZIP et le JSON contiennent vos informations personnelles en clair : gardez-les dans un emplacement approprié et vérifiez leur contenu avant de les partager.</div>
+      <p>Le rapport explique les mécanismes observables et les sources utilisées pour composer une réponse. Il ne fournit pas de pensées privées, de chaîne de pensée interne ou d’introspection subjective.</p>
+      <h3>Effacer ou repartir de zéro</h3>
+      <p>L’effacement des conversations concerne l’historique des échanges. Pour supprimer aussi la mémoire et les apprentissages, utilisez la réinitialisation complète, qui demande confirmation. Pensez à exporter avant de confirmer.</p>
+    </section>
+
+    <section>
+      <h2>6. Garder une copie autonome</h2>
+      <p>Le code fourni est sous <a href="LICENSE.txt">licence MIT</a>. L’application ne demande aucune clé d’API payante et n’appelle aucun service d’IA distant. Elle n’intègre pas d’outil d’analyse de fréquentation. L’hébergeur peut néanmoins recevoir les requêtes habituelles de chargement des fichiers du site.</p>
+      <p>Le paquet portable peut être publié sur un hébergement HTTPS statique. <strong>Cloudflare Pages propose actuellement une offre gratuite</strong> pour ce type de site, sous ses conditions et limites. Un compte tiers est nécessaire pour gérer un projet ; les conditions peuvent évoluer.</p>
+      <ol class="steps">
+        <li>Créez ou ouvrez votre compte Cloudflare, puis allez dans <strong>Workers &amp; Pages</strong>.</li>
+        <li>Créez un projet <strong>Pages</strong> avec l’option de téléversement direct / glisser-déposer. L’intitulé exact peut varier.</li>
+        <li>Déposez les fichiers du site, ou leur ZIP, avec <code>index.html</code>, <code>sw.js</code> et les autres fichiers directement à la racine du contenu publié. N’ajoutez pas vos sauvegardes personnelles au site.</li>
+        <li>Déployez, puis ouvrez l’adresse HTTPS <code>…pages.dev</code> sur l’iPhone. Reprenez les étapes d’installation et de vérification hors ligne ci-dessus.</li>
+      </ol>
+      <p class="small">Un ordinateur peut rendre le téléversement plus commode. Un fichier HTML ouvert directement depuis Fichiers n’offre pas la même installation hors ligne qu’un site HTTPS. Un changement d’adresse crée un nouvel espace de stockage : transférez vos données par export/import.</p>
+    </section>
+
+    <section>
+      <h2>7. Repères et limites</h2>
+      <p>POI est un prototype pédagogique conçu pour un petit écran et des calculs modestes. Elle ne remplace pas un assistant généraliste et n’a pas été testée physiquement sur votre iPhone SE. La vérification finale du mode avion et de la sauvegarde doit se faire sur votre appareil.</p>
+      <p>Le premier chargement, l’installation et les mises à jour ont besoin d’Internet. Une fois le cache complet enregistré et vérifié, les fonctions de conversation, de mémoire et d’entraînement prévues s’exécutent localement. L’effacement des données du site peut supprimer aussi cette disponibilité hors ligne.</p>
+      <h3>Documentation de référence</h3>
+      <ul class="small">
+        <li><a href="https://support.apple.com/fr-fr/guide/iphone/iph42ab2f3a7/ios" target="_blank" rel="noopener noreferrer">Apple — Ajouter un site à l’écran d’accueil</a>.</li>
+        <li><a href="https://support.apple.com/fr-fr/111882" target="_blank" rel="noopener noreferrer">Apple — iPhone SE, 2e génération</a>.</li>
+        <li><a href="https://webkit.org/blog/14403/updates-to-storage-policy/" target="_blank" rel="noopener noreferrer">WebKit — Conservation et suppression du stockage web</a>.</li>
+        <li><a href="https://developers.cloudflare.com/pages/get-started/direct-upload/" target="_blank" rel="noopener noreferrer">Cloudflare Pages — Publier des fichiers statiques</a>.</li>
+        <li><a href="https://developers.cloudflare.com/pages/platform/limits/" target="_blank" rel="noopener noreferrer">Cloudflare Pages — Limites de l’offre gratuite</a>.</li>
+      </ul>
+      <p class="small">Ces liens s’ouvrent sur Internet. Le reste de ce guide est inclus dans les fichiers hors ligne de POI.</p>
+    </section>
+  </main>
+  <footer>POI · Atelier d’IA · Version 0.1.0<br>Une base simple à comprendre, à modifier et à conserver.</footer>
+</body>
+</html>

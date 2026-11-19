@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "POI — Atelier d’IA",
+  "short_name": "POI",
+  "description": "Un petit atelier d’intelligence artificielle pour expérimenter, apprendre et garder une mémoire locale.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#212121",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}

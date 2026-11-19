@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#212121" media="(prefers-color-scheme: dark)">
+  <script>try{var t=localStorage.getItem("poi-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+  <meta name="poi-app" content="local-v1">
+  <meta name="description" content="Un atelier d’intelligence artificielle personnel : comprendre, mémoriser et apprendre sur votre appareil, sans API payante.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>POI — Atelier d’IA</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./engine.js"></script>
+  <script defer src="./exporter.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 0 1 18 0Z"/><path d="M7 10h8M7 14h5"/></symbol>
+    <symbol id="i-learn" viewBox="0 0 24 24"><path d="M9 4a4 4 0 0 0-7 3 4 4 0 0 0 0 8 4 4 0 0 0 7 4V4ZM15 4a4 4 0 0 1 7 3 4 4 0 0 1 0 8 4 4 0 0 1-7 4V4ZM6 8l3 2M15 13l3 2M6 17l3-2M15 7l3 2"/></symbol>
+    <symbol id="i-memory" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8M8 15h5"/></symbol>
+    <symbol id="i-lab" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4 19a1.4 1.4 0 0 0 1.3 2h13.4a1.4 1.4 0 0 0 1.3-2L14 9V3M8 14h8"/><path d="M9 18h.01M14 17h.01"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M9 3h6l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3ZM14 3v5h5M9 12h6M9 16h6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6l8-4Z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </defs></svg>
+  <a href="#main" class="skip-link">Aller au contenu</a>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#conversation" aria-label="POI, conversation"><img src="./icon.svg" alt="" width="44" height="44"><span><strong>POI</strong><small>Atelier d’IA</small></span></a>
+      <div class="sidebar-caption">VOTRE ESPACE</div>
+      <nav class="main-nav" aria-label="Navigation principale">
+        <button class="nav-item active" data-tab="conversation" aria-current="page"><svg><use href="#i-chat"/></svg><span>Conversation</span></button>
+        <button class="nav-item" data-tab="apprendre"><svg><use href="#i-learn"/></svg><span>Apprendre</span></button>
+        <button class="nav-item" data-tab="memoire"><svg><use href="#i-memory"/></svg><span>Mémoire</span><span class="nav-count" id="nav-facts">0</span></button>
+        <button class="nav-item" data-tab="atelier"><svg><use href="#i-lab"/></svg><span>Atelier</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-card"><svg><use href="#i-shield"/></svg><strong>Un atelier à vous.</strong><p>Calculs sur cet appareil.<br>Aucun service d’IA payant.</p><span class="version">VERSION 0.1.0</span></div>
+        <a class="guide-link" href="./guide.html" target="_blank" rel="noopener">Guide de prise en main</a>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="mobile-brand"><img src="./icon.svg" width="32" height="32" alt=""><strong>POI</strong></div>
+        <span class="breadcrumb"><span>Mon atelier</span><span class="separator">/</span><strong id="breadcrumb">Conversation</strong></span>
+        <div class="top-actions"><span class="local-badge"><svg><use href="#i-shield"/></svg>Calcul local</span><button class="button button-small export-button" data-action="export"><svg><use href="#i-export"/></svg><span>Export complet</span></button></div>
+      </header>
+      <div id="storage-warning" class="notice notice-warning global-notice" hidden role="alert"></div>
+      <noscript><div class="notice notice-warning">Activez JavaScript dans Safari pour utiliser cet atelier. Aucun calcul n’est envoyé à un service d’IA.</div></noscript>
+      <main id="main" tabindex="-1">
+        <section id="panel-conversation" class="panel conversation-panel" aria-labelledby="title-conversation">
+          <div class="page-heading"><div><p class="eyebrow">ON COMMENCE ICI</p><h1 id="title-conversation">Comment puis-je vous aider ?</h1><p class="page-intro">Votre espace de conversation et d’apprentissage, sur cet appareil.</p></div><button id="clear-chat" class="button button-quiet" title="Effacer la conversation">Effacer</button></div>
+          <div class="conversation-layout">
+            <div class="chat-column">
+              <div id="chat-messages" class="chat-messages" aria-label="Conversation" aria-live="polite" aria-relevant="additions">
+                <div id="welcome" class="welcome-card">
+                  <div class="welcome-top"><img src="./icon.svg" alt="" width="52" height="52"></div>
+                  <h2>Bonjour, je suis <span id="welcome-name">POI</span>.</h2>
+                  <p>Je suis une petite IA pédagogique. Vous pouvez découvrir mes règles, me confier un souvenir et m’apprendre à reconnaître de nouvelles demandes.</p>
+                  <div class="welcome-note">Je débute avec des règles. Mon modèle attend son premier entraînement.</div>
+                </div>
+              </div>
+              <div class="suggestion-row" aria-label="Exemples de demandes"><button class="suggestion" data-prompt="Qui es-tu ?">Qui es-tu ?</button><button class="suggestion" data-prompt="Que peux-tu faire ?">Tes capacités</button><button class="suggestion" data-prompt="Retiens : couleur préférée = bleu">Garder un souvenir</button></div>
+              <form id="chat-form" class="composer"><label class="sr-only" for="message-input">Votre message</label><textarea id="message-input" rows="1" maxlength="2000" placeholder="Poser une question à POI" enterkeyhint="enter" spellcheck="true" autocapitalize="sentences" aria-describedby="draft-help" required></textarea><div class="composer-bottom"><span id="draft-help">Brouillon · <span id="message-count">0</span>/2 000</span><button id="send-button" class="button button-primary composer-send" type="submit" aria-label="Envoyer le message" title="Envoyer le message" disabled><svg aria-hidden="true"><use href="#i-send"/></svg></button></div></form>
+              <p class="composer-caption">POI traite un petit ensemble de demandes. Elle signale ce qu’elle ne reconnaît pas.</p>
+            </div>
+            <aside class="insight-column" aria-label="État de votre atelier">
+              <div class="card state-card"><p class="eyebrow">LE POINT DE DÉPART</p><h2>Petite, mais explicable.</h2><div class="stat-line"><span>Modèle</span><strong id="model-state">Non entraîné</strong></div><div class="stat-line"><span>Souvenirs</span><strong id="fact-count">0</strong></div><div class="stat-line"><span>Exemples disponibles</span><strong id="example-count">0</strong></div><button class="text-button" data-tab="apprendre">Ouvrir l’apprentissage</button></div>
+              <div class="card how-card"><span class="mini-icon"><svg><use href="#i-learn"/></svg></span><h3>Voir ce qui change</h3><p>Les règles sont écrites à l’avance. La mémoire garde des faits. L’entraînement ajuste des nombres.</p><button class="text-button" data-tab="atelier">Explorer le fonctionnement</button></div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="panel-apprendre" class="panel" hidden aria-labelledby="title-apprendre">
+          <div class="page-heading"><div><p class="eyebrow">EXEMPLES, ESSAIS, PROGRÈS</p><h1 id="title-apprendre">Apprendre ensemble.</h1><p class="page-intro">Montrez à POI le sens d’une formulation, puis entraînez son petit modèle.</p></div></div>
+          <div class="learning-summary"><div><span class="metric-number" id="learning-example-count">0</span><span>exemples étiquetés</span></div><div><span class="metric-number">6</span><span>types de demandes</span></div><div><span class="metric-number" id="learning-version">—</span><span>modèle entraîné</span></div></div>
+          <div class="two-column">
+            <div class="card"><div class="section-heading"><span class="step-label">EXEMPLES</span><h2>Donner un exemple</h2></div><form id="example-form"><label for="example-text">Une nouvelle façon de demander</label><textarea id="example-text" maxlength="500" rows="3" placeholder="Par exemple : sous quel nom te présentes-tu ?" required></textarea><label for="example-intent">Cette phrase demande…</label><select id="example-intent" required></select><button class="button button-primary form-submit" type="submit"><svg><use href="#i-plus"/></svg>Ajouter l’exemple</button></form><p class="help-text">Ajouter un exemple prépare l’apprentissage. Le modèle change seulement lorsque vous l’entraînez.</p></div>
+            <div class="card training-card"><div class="section-heading"><span class="step-label">APPRENTISSAGE</span><h2>Calculer une nouvelle version</h2></div><p>Chaque essai repart de poids nuls et ajuste ses paramètres sur tous les exemples conservés, y compris ceux de départ. Votre version actuelle reste en place pendant l’essai.</p><label for="epochs">Nombre de passages sur les exemples</label><select id="epochs"><option value="80">80 passages · essai rapide</option><option value="160" selected>160 passages · standard</option><option value="200">200 passages · plus long</option></select><button id="train-button" class="button button-primary form-submit"><svg><use href="#i-learn"/></svg>Entraîner une nouvelle version</button><p id="training-status" class="help-text" aria-live="polite">Gardez l’application ouverte pendant ce court calcul.</p></div>
+          </div>
+          <div id="candidate-card" class="card candidate-card" hidden><div class="section-heading"><span class="step-label">RÉSULTAT DE L’ESSAI</span><h2>Une version à examiner</h2></div><div id="candidate-results"></div><div class="button-row"><button id="adopt-button" class="button button-primary">Adopter cette version</button><button id="discard-button" class="button">Écarter</button></div><p class="help-text">Le jeu de contrôle est séparé des exemples d’apprentissage, mais réutilisé entre essais. Ce score ne mesure pas une compréhension générale du français.</p></div>
+          <div class="card"><div class="section-heading heading-with-action"><div><span class="step-label">VOTRE MATIÈRE PREMIÈRE</span><h2>Les exemples d’apprentissage</h2></div><span id="dataset-count" class="count-label"></span></div><p class="help-text">Les exemples de départ sont fournis et identifiés. Vous pouvez ajouter vos formulations et retirer celles dont vous ne voulez plus.</p><div id="example-list" class="example-list"></div></div>
+          <div class="card"><div class="section-heading heading-with-action"><div><span class="step-label">MESURER</span><h2>Contrôler la version actuelle</h2></div><button id="evaluate-button" class="button">Évaluer</button></div><div id="evaluation-result" class="empty-small">Aucune évaluation lancée dans cette session.</div></div>
+        </section>
+
+        <section id="panel-memoire" class="panel" hidden aria-labelledby="title-memoire">
+          <div class="page-heading"><div><p class="eyebrow">LES INFORMATIONS QUE VOUS CONFIEZ</p><h1 id="title-memoire">Les souvenirs de POI.</h1><p class="page-intro">Des faits explicites, conservés sur cet appareil et modifiables par vous.</p></div></div>
+          <div class="two-column memory-layout"><div class="card"><div class="section-heading"><span class="step-label">MÉMORISER</span><h2>Ajouter un souvenir</h2></div><form id="memory-form"><label for="fact-key">Sujet</label><input id="fact-key" maxlength="80" placeholder="couleur préférée" required><label for="fact-value">Information à conserver</label><textarea id="fact-value" maxlength="500" rows="3" placeholder="bleu" required></textarea><button class="button button-primary form-submit" type="submit">Mémoriser</button></form><p class="help-text">Un sujet déjà présent est mis à jour. Ces informations viennent de vous ; elles ne sont pas vérifiées par une source extérieure.</p></div><div class="card memory-explainer"><span class="mini-icon"><svg><use href="#i-memory"/></svg></span><h2>Se souvenir n’est pas s’entraîner.</h2><p>Une information mémorisée reste un fait enregistré. Elle ne modifie pas les paramètres du modèle.</p><div class="sample-command"><span>POUR LA RETROUVER</span><code>Que sais-tu sur couleur préférée ?</code></div><p class="help-text">Exportez régulièrement votre travail : le navigateur peut effacer son stockage local.</p></div></div>
+          <div class="section-heading heading-with-action"><h2>Informations enregistrées</h2><span id="memory-count" class="count-label">0 souvenir</span></div><div id="facts-list" class="facts-grid"></div>
+        </section>
+
+        <section id="panel-atelier" class="panel" hidden aria-labelledby="title-atelier">
+          <div class="page-heading"><div><p class="eyebrow">COMPRENDRE ET CONSERVER</p><h1 id="title-atelier">Sous le capot.</h1><p class="page-intro">Votre agent, ses vérifications et un export complet de votre travail.</p></div></div>
+          <div class="two-column"><div class="card"><div class="section-heading"><span class="step-label">IDENTITÉ PROGRAMMÉE</span><h2>Qui est votre agent ?</h2></div><form id="identity-form"><label for="agent-name">Nom de l’agent</label><input id="agent-name" maxlength="60" required><label for="agent-role">Rôle affiché</label><input id="agent-role" maxlength="160" required><label for="user-name">Votre prénom <span class="optional">(facultatif)</span></label><input id="user-name" maxlength="60" autocomplete="given-name"><button class="button form-submit" type="submit">Enregistrer l’identité</button></form><p class="help-text">Changer le rôle affiché ne crée pas de nouvelles capacités. C’est une identité fonctionnelle, pas une preuve de conscience.</p></div><div class="card export-card"><div class="section-heading"><span class="step-label">TOUT VOTRE TRAVAIL</span><h2>Un export vraiment détaillé.</h2></div><p>Un dossier ZIP réunit la sauvegarde restaurable, un rapport lisible et des tableaux de toutes les données conservées.</p><ul class="export-features"><li>Conversations et origine des réponses</li><li>Mémoire, auteurs et dates</li><li>Exemples, entraînements et évaluations</li><li>Paramètres complets et journal des opérations</li></ul><button class="button button-primary form-submit" data-action="export"><svg><use href="#i-export"/></svg>Exporter le dossier complet</button><div class="button-row small-actions"><button class="text-button" id="export-json">Sauvegarde JSON seule</button><button class="text-button" id="import-button">Restaurer une sauvegarde</button></div><input type="file" id="import-input" accept=".json,application/json" hidden><p class="help-text">Les exports contiennent vos données en clair. Conservez-les dans un endroit privé. La restauration remplace l’état actuel après confirmation.</p></div></div>
+          <div class="two-column"><div class="card"><div class="section-heading heading-with-action"><div><span class="step-label">VÉRIFICATIONS</span><h2>Contrôler les fonctions</h2></div><button id="selftest-button" class="button">Lancer les contrôles</button></div><p class="help-text">Les contrôles utilisent des données d’essai isolées. Ils ne modifient ni vos souvenirs ni votre modèle.</p><div id="selftest-results" class="empty-small">Aucun contrôle exécuté dans cette session.</div></div><div class="card"><div class="section-heading"><span class="step-label">SUR VOTRE IPHONE</span><h2>Prêt à emporter</h2></div><div class="status-row"><span>Enregistrement</span><strong id="storage-status">Chargement…</strong></div><div class="status-row"><span>Mode hors ligne</span><strong id="offline-status">Vérification…</strong></div><p id="offline-detail" class="help-text">La première ouverture nécessite une connexion.</p><button id="offline-retry" class="button button-small">Vérifier le mode hors ligne</button><ol class="install-steps"><li>Ouvrez le lien dans <strong>Safari</strong>.</li><li>Touchez <strong>Partager</strong>, puis <strong>Sur l’écran d’accueil</strong>.</li><li>Ouvrez l’icône et attendez « Prêt hors ligne ».</li><li>Vérifiez ensuite en mode avion.</li></ol><a class="text-button" href="./guide.html" target="_blank" rel="noopener">Lire le guide complet</a></div></div>
+          <div class="card"><div class="section-heading heading-with-action"><div><span class="step-label">TRACE DES APPRENTISSAGES</span><h2>Historique des versions</h2></div><button id="rollback-button" class="button" disabled>Revenir au modèle précédent</button></div><div id="training-history" class="empty-small">Aucun entraînement pour le moment.</div><p class="help-text">L’export conserve les paramètres des essais retenus dans l’historique, leurs données d’apprentissage et leurs mesures.</p></div>
+          <details class="card technical-details"><summary>Capacités, méthode et limites</summary><div><p><strong>Capacités réelles :</strong> réponses à partir de règles, attribution de « je » et « tu » dans les cas simples, mémoire de faits déclarés, classification supervisée de six intentions, sauvegardes et contrôles.</p><p><strong>Méthode :</strong> un petit classifieur apprend des associations entre les mots et les catégories. Les poids numériques changent pendant l’entraînement. Les réponses restent des formulations programmées.</p><p><strong>Limites :</strong> pas de recherche web, d’accès à vos autres applications, de microphone, de compréhension générale des citations ou d’apprentissage continu lorsque l’application est fermée. Un score de classement n’est pas une probabilité de vérité.</p><p id="retention-detail">L’historique est borné pour préserver les ressources du téléphone. Les compteurs de réduction sont conservés dans l’export.</p><p><strong>Gratuité :</strong> aucun appel à une API d’IA, aucune publicité, aucun serveur de calcul requis par le programme. L’adresse hébergée dépend des conditions de son hébergeur. Le code complet peut être conservé et réhébergé.</p><a href="./poi-application-complete.zip" class="button button-small" download>Télécharger la copie de l’application</a></div></details>
+          <div class="card appearance-card"><div class="section-heading"><span class="step-label">PRÉSENTATION</span><h2>Texte et apparence</h2></div><label for="theme-choice">Couleurs de l’interface</label><select id="theme-choice"><option value="system">Comme l’iPhone · automatique</option><option value="light">Clair · texte noir, fond blanc</option><option value="dark">Sombre · texte clair, fond gris foncé</option></select><p class="help-text">Une présentation sobre inspirée de ChatGPT. Le brouillon accepte plusieurs lignes ; le bouton flèche envoie votre message. Sur ordinateur, Entrée envoie et Majuscule + Entrée ajoute une ligne.</p></div>
+          <div class="danger-zone"><div><strong>Repartir de zéro</strong><p>Efface l’état local de cet atelier. Pensez à exporter d’abord.</p></div><button id="reset-button" class="button button-danger">Réinitialiser l’atelier</button></div>
+        </section>
+      </main>
+      <footer class="workspace-footer"><span id="save-label">Chargement de votre atelier…</span><span>Conçu pour apprendre, à votre rythme.</span></footer>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="modal-backdrop" class="modal-backdrop" hidden><section id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><h2 id="modal-title"></h2><p id="modal-message"></p><div class="button-row"><button id="modal-cancel" class="button">Annuler</button><button id="modal-confirm" class="button button-primary">Confirmer</button></div></section></div>
+</body>
+</html>

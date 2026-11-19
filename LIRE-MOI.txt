@@ -1,0 +1,76 @@
+POI — ATELIER D’IA
+Base de travail complète et portable
+
+CE QUE CONTIENT CETTE ARCHIVE
+Les fichiers source HTML, CSS et JavaScript ainsi que les icônes et la
+documentation sont directement à la racine. Il s’agit d’une application web,
+pas d’une application iPhone native ou d’un fichier d’installation App Store.
+
+Cette archive de code ne contient aucune donnée personnelle : aucune
+conversation conservée, aucun fait utilisateur ni sauvegarde de travail. Les
+pages de contrôle et les résultats de test de la session n’y figurent pas.
+Le moteur comporte ses exemples pédagogiques et ses contrôles fonctionnels
+intégrés, utilisables depuis l’application.
+
+FICHIERS
+• index.html : interface de POI.
+• styles.css : présentation claire/sombre et adaptation au petit écran.
+• app.js : interface, brouillon, sauvegarde locale et actions utilisateur.
+• engine.js : règles, mémoire et classifieur local de six intentions (POICore).
+• exporter.js : génération des exports détaillés (POIExport).
+• sw.js : installation et cache hors ligne, version poi-v1.0.7.
+• manifest.webmanifest : configuration de l’application web.
+• icon.svg et apple-touch-icon.png : icônes.
+• guide.html : guide complet en français, avec sources et limites.
+• LICENSE.txt : licence MIT du code et de la documentation.
+
+INSTALLATION SUR L’IPHONE
+1. Publiez les fichiers sur un hébergement statique HTTPS. Placez index.html
+   et les autres fichiers directement à la racine de l’adresse publiée.
+   Le guide présente notamment la publication sur Cloudflare Pages.
+2. Ouvrez cette adresse dans Safari avec une connexion Internet.
+3. Touchez Partager > Sur l’écran d’accueil, puis ouvrez la nouvelle icône.
+4. Dans Atelier, attendez le statut « Prêt hors ligne ».
+5. Vérifiez en mode avion : fermez puis rouvrez POI depuis son icône.
+
+Ouvrir index.html directement dans Fichiers ne réalise pas cette installation
+hors ligne. La publication initiale et le premier chargement nécessitent une
+connexion. L’application n’appelle pas d’API d’IA payante ni de service d’IA
+distant ; elle n’intègre pas d’outil d’analyse de fréquentation. Les conditions
+de l’hébergeur sont indépendantes du code et peuvent évoluer.
+
+CONSERVER VOTRE TRAVAIL
+Faites séparément un « Export complet » depuis l’application : cette autre
+archive contient les conversations, faits, exemples, entraînements, paramètres
+et mesures effectivement conservés. Elle contient des données en clair. Ne la
+publiez pas avec le code du site.
+
+Pour restaurer, extrayez le ZIP de travail et importez sauvegarde-poi.json
+dans Atelier. La restauration remplace l’état actuel après confirmation.
+Un changement d’adresse web crée un autre espace de stockage : exportez depuis
+l’ancienne adresse avant de restaurer dans la nouvelle.
+
+CONSERVER LE BOUTON DE TÉLÉCHARGEMENT
+Une archive ne peut pas se contenir elle-même. Si vous réhébergez POI et voulez
+conserver le bouton « Télécharger la copie de l’application », publiez aussi
+ce ZIP non décompressé sous le nom poi-application-complete.zip, à côté des
+fichiers décompressés. Il n’est pas nécessaire au fonctionnement de l’atelier
+et n’est pas inclus dans son cache hors ligne.
+
+MODIFIER LA BASE
+Les fichiers HTML, CSS et JavaScript se modifient dans un éditeur de texte.
+Aucune compilation ni installation de dépendances n’est nécessaire. Après
+une modification, changez la constante VERSION dans sw.js (par exemple
+poi-v1.0.7 en poi-v1.0.8), puis publiez les fichiers ensemble. Cela permet
+l’installation d’un nouveau cache cohérent. Vérifiez l’interface, le stockage
+et le mode avion après la mise à jour.
+
+LIMITES
+POI est un prototype pédagogique : des règles, une mémoire explicite et un
+petit classifieur entraînable construisent ses réponses. Ce n’est pas un grand
+modèle de langage généraliste. Gardez l’application ouverte pendant
+l’entraînement. Le stockage du navigateur peut être supprimé : exportez
+régulièrement votre travail. La livraison ne constitue pas un test physique
+sur votre iPhone.
+
+Le guide détaillé se trouve dans guide.html.
