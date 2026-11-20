@@ -1,12 +1,24 @@
 (function (root, factory) {
   'use strict';
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.POICore = factory();
-}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  function documentsProvider() {
+    if (root && root.POIDocuments) return root.POIDocuments;
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./documents.js'); }
+      catch (error) {
+        if (error.code === 'MODULE_NOT_FOUND' && /Cannot find module ['"]\.\/documents\.js['"]/.test(error.message)) return null;
+        throw error;
+      }
+    }
+    return null;
+  }
+  if (typeof module === 'object' && module.exports) module.exports = factory(documentsProvider);
+  else root.POICore = factory(documentsProvider);
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (documentsProvider) {
   'use strict';
 
-  var VERSION = '1.0.0';
-  var LIMITS = Object.freeze({ message: 2000, example: 500, examples: 400, facts: 100,
+  var VERSION = '1.1.0';
+  var DEFAULT_EPOCHS = 400, MAX_EPOCHS = 800;
+  var LIMITS = Object.freeze({ message: 2000, assistantMessage: 16000, example: 500, examples: 400, facts: 100,
     messages: 2000, events: 5000, trainingRuns: 100, features: 384, importBytes: 25 * 1024 * 1024 });
   var INTENTS = Object.freeze([
     { id: 'identity', label: 'Identité', description: 'Demander le nom de l’agent.' },
@@ -135,7 +147,7 @@
     var time = now();
     return { schemaVersion: 1, meta: { createdAt: time, updatedAt: time },
       identity: { name: 'POI', role: 'assistante pédagogique', userName: '' },
-      facts: [], examples: clone(SEED_EXAMPLES), model: null, previousModel: null,
+      facts: [], documents: [], examples: clone(SEED_EXAMPLES), model: null, previousModel: null,
       messages: [], events: [], trainingRuns: [],
       retention: { messagesDropped: 0, eventsDropped: 0, trainingRunsDropped: 0 } };
   }
@@ -164,12 +176,38 @@
   function answer(text, source, intent, score, explanation) {
     return { text: text, source: source, intent: intent || null, score: score == null ? null : score, explanation: explanation };
   }
+  function documentModule() {
+    var module = documentsProvider();
+    if (!module || typeof module.validateDocuments !== 'function' || typeof module.answer !== 'function') fail('Le module de documents n’est pas disponible. Rechargez l’application avant d’utiliser les pièces jointes.');
+    return module;
+  }
+  function validateDocumentList(value) {
+    if (!Array.isArray(value)) fail('La liste des documents est invalide.');
+    // Empty and legacy states must remain readable without the optional module.
+    if (!value.length) return [];
+    return documentModule().validateDocuments(value);
+  }
+  function validateDocumentIds(value) {
+    var ids = list(value, 'Documents sélectionnés', 6).map(function (item) { return textValue(item, 'Identifiant de document', 100, false); });
+    if (new Set(ids).size !== ids.length) fail('La sélection de documents contient un doublon.');
+    return ids;
+  }
+  function selectedDocuments(state, options) {
+    if (options == null) return null;
+    keysOnly(options, ['documentIds'], 'Options de conversation');
+    if (options.documentIds == null) return null;
+    var ids = validateDocumentIds(options.documentIds);
+    if (!ids.length) return null;
+    var module = documentModule(), documents = module.validateDocuments(state.documents || []);
+    if (ids.some(function (documentId) { return !documents.some(function (document) { return document.id === documentId; }); })) fail('Un document sélectionné est absent. Actualisez la sélection des pièces jointes.');
+    return { module: module, documents: documents, ids: ids };
+  }
   function answerForIntent(state, intent, source, score) {
     var name = state.identity.name;
     var values = {
       identity: 'Je m’appelle ' + name + '.',
       role: 'Mon rôle est : ' + state.identity.role + '. Je suis un atelier pour observer des règles, une mémoire et un petit apprentissage local.',
-      capabilities: 'Je peux me présenter, distinguer les auteurs des messages, enregistrer et rappeler des faits que vous déclarez, et entraîner un petit classifieur de six intentions. Je n’accède ni au Web, ni à vos autres applications, ni à vos fichiers sans import volontaire. Mes réponses couvrent un domaine limité.',
+      capabilities: 'Je peux me présenter, distinguer les auteurs des messages, enregistrer et rappeler des faits que vous déclarez, et entraîner un petit classifieur de six intentions. Je peux aussi chercher des passages dans le texte extrait des documents que vous importez et sélectionnez. Je n’accède ni au Web, ni à vos autres applications, ni à vos fichiers sans import volontaire. Mes réponses couvrent un domaine limité.',
       remember: 'Pour enregistrer un fait, écrivez « Retiens : couleur préférée = bleu ». Vous pouvez aussi écrire « Retiens que ma couleur préférée est bleu ». Je mémorise cette déclaration sans en vérifier la vérité.',
       recall: 'Pour retrouver un fait, écrivez « Que sais-tu sur couleur préférée ? ». Le nom du fait doit correspondre à la clé enregistrée.',
       greeting: 'Bonjour' + (state.identity.userName ? ' ' + state.identity.userName : '') + ' ! Je suis ' + name + '. Que souhaitez-vous essayer dans cet atelier ?'
@@ -189,7 +227,7 @@
     var match = text.match(/^\s*que\s+sais[-\s]tu\s+sur\s+(.{1,85}?)\s*\?*\s*$/i);
     return match ? match[1].trim().replace(/[?\s]+$/, '') : null;
   }
-  function processMessage(state, text, messageId) {
+  function processMessage(state, text, messageId, documentContext) {
     var simple = normalized(text), memory = parseMemoryCommand(text), key, existing, time;
     if (memory) {
       key = normalized(memory.key);
@@ -210,6 +248,17 @@
       if (existing) return answer('Vous m’avez indiqué : « ' + existing.key + ' = ' + existing.value + ' ».', 'memory', 'recall', null, 'Lecture d’une déclaration conservée en mémoire, avec son auteur. Ce fait n’a pas été vérifié.');
       return answer('Je n’ai aucune information enregistrée pour « ' + recall + ' ».', 'unknown', 'recall', null, 'La clé demandée est absente ; aucune valeur n’est inventée.');
     }
+    if (/\b(?:six|6) (?:intentions|categories|types de demandes)\b/.test(simple) ||
+        /^(?:quelles (?:sont tes|sont les|sont mes) intentions|quelles intentions (?:comprends tu|reconnais tu)|explique(?: moi)? les intentions)$/.test(simple)) {
+      return answer('Une intention désigne le type de demande à reconnaître. Mes six catégories sont :\n' +
+        INTENTS.map(function (item, index) { return (index + 1) + '. ' + item.label + ' : ' + item.description; }).join('\n') +
+        '\nDans Apprendre, choisissez la catégorie attendue et écrivez une formulation par ligne. Ces six catégories ne couvrent pas toutes les conversations possibles.',
+      'rule', null, null, 'Présentation programmée des six catégories réelles du classifieur ; aucun entraînement ni ajout d’exemple.');
+    }
+    if (!documentContext && /^\s*[^=\n]{1,100}\s*=\s*[^=\n]{1,100}\s*$/.test(text)) {
+      return answer('Écrire une équivalence comme « Yo=Bonjour » dans la conversation ne m’enseigne pas le mot « Yo ». Ouvrez Apprendre, saisissez « Yo » seul, choisissez la catégorie Salutation, puis entraînez et adoptez une version. Une ligne doit contenir une seule formulation, sans signe « = ».',
+        'rule', null, null, 'Le signe « = » est traité comme de la ponctuation, pas comme une instruction d’apprentissage. Les exemples et les paramètres sont inchangés.');
+    }
     if (/^(qui suis je|qui est je|qui designe je|je designe qui)$/.test(simple)) {
       return answer('Dans votre message, « je » vous désigne' + (state.identity.userName ? ', ' + state.identity.userName : '') + '. Dans une réponse de l’assistante, « je » désigne ' + state.identity.name + '.', 'rule', null, null, 'Le locuteur et le destinataire sont fournis par la structure du dialogue. Cette règle ne résout pas les citations libres.');
     }
@@ -222,6 +271,11 @@
     if (/^(bonjour|salut|bonsoir|coucou)( poi)?$/.test(simple)) return answerForIntent(state, 'greeting', 'rule');
     if (/^(retiens|memorise|enregistre)( |$)/.test(simple)) return answerForIntent(state, 'remember', 'rule');
     if (/^(que sais tu|qu as tu retenu|consulte ta memoire|montre ta memoire)$/.test(simple)) return answerForIntent(state, 'recall', 'rule');
+    if (documentContext) {
+      var documentReply = documentContext.module.answer(documentContext.documents, text, documentContext.ids);
+      if (documentReply) return answer(textValue(documentReply.text, 'Réponse documentaire', LIMITS.assistantMessage, false),
+        'document', null, null, textValue(documentReply.explanation || 'Réponse extraite des documents sélectionnés.', 'Explication documentaire', 4000, true));
+    }
     if (state.model) {
       var proposed = predict(state.model, text);
       if (proposed.accepted) return answerForIntent(state, proposed.intent, 'model', proposed.score);
@@ -229,16 +283,24 @@
     }
     return answer('Cette formulation n’est pas couverte par mes règles et aucun modèle n’a encore été entraîné. Essayez une commande proposée, ou ajoutez des exemples puis lancez un entraînement.', 'unknown', null, null, 'Ni règle applicable ni modèle entraîné ; aucune compréhension générale du français n’est revendiquée.');
   }
-  function handleMessage(state, text) {
+  function handleMessage(state, text, options) {
     text = textValue(text, 'Message', LIMITS.message, false);
-    var userMessage = { id: id('message'), role: 'user', speakerName: state.identity.userName || 'Utilisateur', text: text, createdAt: now() };
-    appendBounded(state, 'messages', userMessage, LIMITS.messages);
-    var response = processMessage(state, text, userMessage.id);
-    appendBounded(state, 'messages', { id: id('message'), role: 'assistant', speakerName: state.identity.name, text: response.text,
+    var documentContext = selectedDocuments(state, options);
+    // Stage only mutable collections; document payload strings and models stay shared.
+    // Reading a document or exceeding the complete backup budget cannot leave half a turn.
+    var candidate = mutationCandidate(state, { messages: state.messages.slice(), facts: state.facts.map(function (fact) { return Object.assign({}, fact); }) });
+    var userMessage = { id: id('message'), role: 'user', speakerName: candidate.identity.userName || 'Utilisateur', text: text, createdAt: now() };
+    if (documentContext) userMessage.documentIds = documentContext.ids.slice();
+    appendBounded(candidate, 'messages', userMessage, LIMITS.messages);
+    var response = processMessage(candidate, text, userMessage.id, documentContext);
+    var assistantMessage = { id: id('message'), role: 'assistant', speakerName: candidate.identity.name, text: response.text,
       createdAt: now(), source: response.source, intent: response.intent, score: response.score, explanation: response.explanation,
-      modelVersion: state.model && (response.source === 'model' || (response.source === 'unknown' && response.intent === null)) ? state.model.version : null }, LIMITS.messages);
-    recordEvent(state, 'response', 'assistant', 'Réponse issue de : ' + response.source + (response.intent ? ' ; intention : ' + response.intent : '') + '.', userMessage.id);
-    touch(state);
+      modelVersion: candidate.model && (response.source === 'model' || (response.source === 'unknown' && response.intent === null)) ? candidate.model.version : null };
+    if (documentContext) assistantMessage.documentIds = documentContext.ids.slice();
+    appendBounded(candidate, 'messages', assistantMessage, LIMITS.messages);
+    recordEvent(candidate, 'response', 'assistant', 'Réponse issue de : ' + response.source + (response.intent ? ' ; intention : ' + response.intent : '') + '.', userMessage.id);
+    touch(candidate);
+    commitMutation(state, candidate, ['messages', 'facts']);
     return response;
   }
 
@@ -251,16 +313,74 @@
   }
   function isHeldout(text) { var key = normalized(text); return HELDOUT.some(function (item) { return normalized(item.text) === key; }); }
   function addExample(state, text, intent) {
-    text = textValue(text, 'Exemple', LIMITS.example, false); validIntent(intent);
-    if (!contentWords(text).length) fail('Cet exemple ne contient aucun mot exploitable.');
-    if (isHeldout(text)) fail('Cette formulation appartient au petit jeu d’évaluation réservé. Choisissez une autre formulation.');
-    if (state.examples.length >= LIMITS.examples) fail('La limite de ' + LIMITS.examples + ' exemples est atteinte. Aucun exemple n’a été supprimé.');
-    var duplicate = state.examples.filter(function (item) { return normalized(item.text) === normalized(text); })[0];
-    if (duplicate) fail(duplicate.intent === intent ? 'Cet exemple existe déjà.' : 'Cette formulation possède déjà une autre catégorie. Retirez ou corrigez cet exemple avant de le remplacer.');
-    var item = { id: id('example'), text: text, intent: intent, origin: 'user', createdAt: now() };
-    state.examples.push(item);
-    recordEvent(state, 'example_added', 'user', 'Exemple ajouté pour la catégorie « ' + intent + ' » : ' + text);
-    return item;
+    text = textValue(text, 'Exemple', LIMITS.example, false);
+    if (/[\r\n]/.test(text)) fail('Saisissez une seule formulation ; utilisez l’ajout par lignes pour plusieurs exemples.');
+    var result = addExamples(state, text, intent);
+    if (!result.added) fail('Cet exemple existe déjà.');
+    return result.examples[0];
+  }
+  function mutationCandidate(state, changes) {
+    return Object.assign({}, state, changes, {
+      events: state.events.slice(),
+      meta: state.meta ? Object.assign({}, state.meta) : { createdAt: now(), updatedAt: now() },
+      retention: Object.assign({ messagesDropped: 0, eventsDropped: 0, trainingRunsDropped: 0 }, state.retention || {})
+    });
+  }
+  function commitMutation(state, candidate, field) {
+    exportState(candidate);
+    (Array.isArray(field) ? field : [field]).forEach(function (name) { state[name] = candidate[name]; });
+    state.events = candidate.events;
+    state.meta = candidate.meta;
+    state.retention = candidate.retention;
+  }
+  function addExamples(state, multilineText, intent) {
+    validIntent(intent);
+    if (typeof multilineText !== 'string' || multilineText.length > LIMITS.examples * (LIMITS.example + 2)) fail('Le lot de formulations dépasse la limite autorisée.');
+    var lines = multilineText.split(/\r\n?|\n/).map(function (line) { return line.trim(); }).filter(Boolean);
+    if (!lines.length) fail('Ajoutez au moins une formulation, une par ligne.');
+    var known = Object.create(null), pending = [], skipped = 0;
+    state.examples.forEach(function (item) {
+      var key = normalized(item.text);
+      known[key] = known[key] && known[key] !== item.intent ? 'conflict' : item.intent;
+    });
+    lines.forEach(function (line) {
+      var text = textValue(line, 'Exemple', LIMITS.example, false), key = normalized(text);
+      if (text.indexOf('=') >= 0) fail('Le signe « = » ne crée pas d’équivalence. Écrivez chaque formulation seule, une par ligne, puis choisissez sa catégorie. Aucun exemple de ce lot n’a été ajouté.');
+      if (!contentWords(text).length) fail('Cet exemple ne contient aucun mot exploitable.');
+      if (isHeldout(text)) fail('Cette formulation appartient au petit jeu d’évaluation réservé. Choisissez une autre formulation.');
+      if (known[key]) {
+        if (known[key] !== intent) fail('Cette formulation possède déjà une autre catégorie. Aucun exemple de ce lot n’a été ajouté.');
+        skipped += 1; return;
+      }
+      known[key] = intent;
+      pending.push(text);
+    });
+    if (state.examples.length + pending.length > LIMITS.examples) fail('La limite de ' + LIMITS.examples + ' exemples serait dépassée. Aucun exemple de ce lot n’a été ajouté.');
+    if (!pending.length) return { added: 0, skipped: skipped, examples: [] };
+    var additions = pending.map(function (text) { return { id: id('example'), text: text, intent: intent, origin: 'user', createdAt: now() }; });
+    var candidate = mutationCandidate(state, { examples: state.examples.concat(additions) });
+    additions.forEach(function (item) { recordEvent(candidate, 'example_added', 'user', 'Exemple ajouté pour la catégorie « ' + intent + ' » : ' + item.text); });
+    commitMutation(state, candidate, 'examples');
+    return { added: additions.length, skipped: skipped, examples: additions };
+  }
+  function addDocument(state, document) {
+    var existing = state.documents == null ? [] : state.documents;
+    if (!Array.isArray(existing)) fail('La liste des documents est invalide.');
+    var documents = documentModule().validateDocuments(existing.concat([document]));
+    var added = documents[documents.length - 1], candidate = mutationCandidate(state, { documents: documents });
+    recordEvent(candidate, 'document_added', 'user', 'Document importé volontairement : ' + added.name + ' ; type : ' + added.kind + ' ; taille : ' + added.size + ' octets.');
+    commitMutation(state, candidate, 'documents');
+    return added;
+  }
+  function removeDocument(state, documentId) {
+    documentId = textValue(documentId, 'Identifiant de document', 100, false);
+    var documents = validateDocumentList(state.documents == null ? [] : state.documents);
+    var removed = documents.filter(function (document) { return document.id === documentId; })[0];
+    if (!removed) return false;
+    var candidate = mutationCandidate(state, { documents: documents.filter(function (document) { return document.id !== documentId; }) });
+    recordEvent(candidate, 'document_removed', 'user', 'Document retiré : ' + removed.name + '. Les messages déjà conservés restent dans l’historique.');
+    commitMutation(state, candidate, 'documents');
+    return true;
   }
   function vocabularyFor(examples) {
     var counts = Object.create(null);
@@ -313,7 +433,7 @@
       texts[key] = true; observed[item.intent] = true;
     });
     if (CLASSES.some(function (category) { return !observed[category]; })) fail('Chaque catégorie doit posséder au moins un exemple.');
-    var epochs = options.epochs == null ? 160 : integer(options.epochs, 'Nombre d’itérations', 1, 200);
+    var epochs = options.epochs == null ? DEFAULT_EPOCHS : integer(options.epochs, 'Nombre d’itérations', 1, MAX_EPOCHS);
     var learningRate = options.learningRate == null ? 0.8 : finite(options.learningRate, 'Pas d’apprentissage', 0.01, 2);
     var vocabulary = vocabularyFor(clean), featureCount = vocabulary.length;
     var model = { schemaVersion: 1, algorithm: 'softmax-bag-of-words', version: id('model'), classes: CLASSES.slice(), vocabulary: vocabulary,
@@ -364,6 +484,18 @@
     return { correct: correct, total: results.length, accuracy: correct / results.length, results: results,
       note: 'Petit jeu fixe de formulations réservées, distinct de l’entraînement. Des essais répétés peuvent guider vos choix : ce n’est pas une mesure générale de compréhension du français.' };
   }
+  function evaluateExamples(model, examples) {
+    var results = list(examples, 'Exemples à vérifier', LIMITS.examples).map(function (sample) {
+      plain(sample, 'Exemple à vérifier');
+      var text = textValue(sample.text, 'Formulation à vérifier', LIMITS.example, false), expected = validIntent(sample.intent);
+      var p = predict(model, text);
+      return { text: text, expected: expected, predicted: p.intent, correct: p.intent === expected,
+        score: p.score, margin: p.margin, accepted: p.accepted };
+    });
+    var correct = results.filter(function (result) { return result.correct; }).length;
+    return { correct: correct, total: results.length, accuracy: results.length ? correct / results.length : null, results: results,
+      note: results.length ? 'Contrôle des formulations fournies avec les mêmes seuils de refus. Ces exemples ont pu servir à l’entraînement ; ce score ne remplace pas le jeu de contrôle réservé.' : 'Aucune formulation personnelle à vérifier ; aucun taux de réussite n’est calculé.' };
+  }
 
   function validateModel(value) {
     if (value === null) return null;
@@ -380,7 +512,7 @@
     var bias = list(value.bias, 'Biais du modèle', 6).map(function (entry) { return finite(entry, 'Biais', -1000, 1000); });
     if (weights.length !== featureCount * CLASSES.length || bias.length !== CLASSES.length) fail('Dimensions des paramètres incohérentes.');
     keysOnly(value.config, ['epochs', 'learningRate', 'l2', 'seed', 'initialization', 'featureLimit'], 'Configuration');
-    var config = { epochs: integer(value.config.epochs, 'Itérations', 1, 200), learningRate: finite(value.config.learningRate, 'Pas', 0.01, 2),
+    var config = { epochs: integer(value.config.epochs, 'Itérations', 1, MAX_EPOCHS), learningRate: finite(value.config.learningRate, 'Pas', 0.01, 2),
       l2: finite(value.config.l2, 'Régularisation', 0, 1), seed: integer(value.config.seed, 'Graine', 0, 2147483647),
       initialization: value.config.initialization, featureLimit: integer(value.config.featureLimit, 'Limite des caractéristiques', 1, LIMITS.features) };
     if (config.initialization !== 'zeros') fail('Initialisation de modèle inconnue.');
@@ -413,7 +545,7 @@
     if (fields.some(function (field) { return !Object.prototype.hasOwnProperty.call(value, field); })) fail('Mesures d’entraînement incomplètes. Omettez ce bloc si aucune mesure n’a été conservée.');
     var output = {};
     Object.keys(value).forEach(function (key) {
-      if (key === 'epochs') output[key] = integer(value[key], key, 1, 200);
+      if (key === 'epochs') output[key] = integer(value[key], key, 1, MAX_EPOCHS);
       else if (key === 'examples') output[key] = integer(value[key], key, 1, LIMITS.examples);
       else if (key.indexOf('accuracy') === 0) output[key] = finite(value[key], key, 0, 1);
       else output[key] = finite(value[key], key, 0, key === 'durationMs' ? 86400000 : 1000000);
@@ -435,6 +567,7 @@
       output.config = {};
       Object.keys(value.config).forEach(function (key) {
         if (key === 'initialization') { if (value.config[key] !== 'zeros') fail('Initialisation inconnue.'); output.config[key] = value.config[key]; }
+        else if (key === 'epochs') output.config[key] = integer(value.config[key], 'Itérations de séance', 1, MAX_EPOCHS);
         else output.config[key] = finite(value.config[key], 'Configuration de séance', 0, key === 'seed' ? 2147483647 : 1000);
       });
     }
@@ -453,7 +586,7 @@
   }
   function validateState(value) {
     safeTree(value, 0);
-    keysOnly(value, ['schemaVersion', 'meta', 'identity', 'facts', 'examples', 'model', 'previousModel', 'messages', 'events', 'trainingRuns', 'retention'], 'Sauvegarde');
+    keysOnly(value, ['schemaVersion', 'meta', 'identity', 'facts', 'documents', 'examples', 'model', 'previousModel', 'messages', 'events', 'trainingRuns', 'retention'], 'Sauvegarde');
     if (value.schemaVersion !== 1) fail('Version de sauvegarde non prise en charge.');
     keysOnly(value.identity, ['name', 'role', 'userName'], 'Identité');
     var output = { schemaVersion: 1, identity: { name: textValue(value.identity.name, 'Nom de l’agent', 60, false), role: textValue(value.identity.role, 'Rôle', 240, false), userName: textValue(value.identity.userName, 'Nom utilisateur', 60, true) } };
@@ -469,21 +602,24 @@
     ensureUnique(output.facts, 'id', 'Faits');
     var factKeys = Object.create(null);
     output.facts.forEach(function (fact) { var key = normalized(fact.key); if (!key || factKeys[key]) fail('Clé de fait absente ou dupliquée.'); factKeys[key] = true; });
+    output.documents = validateDocumentList(value.documents === undefined ? [] : value.documents);
     output.examples = list(value.examples, 'Exemples', LIMITS.examples).map(validateExample);
     ensureUnique(output.examples, 'id', 'Exemples');
     output.examples.forEach(function (example) { if (isHeldout(example.text)) fail('Une sauvegarde ne peut pas placer un exemple réservé dans l’entraînement.'); });
     output.model = validateModel(value.model);
     output.previousModel = validateModel(value.previousModel);
     output.messages = list(value.messages, 'Messages', LIMITS.messages).map(function (message) {
-      keysOnly(message, ['id', 'role', 'speakerName', 'text', 'createdAt', 'source', 'intent', 'score', 'explanation', 'modelVersion'], 'Message');
+      keysOnly(message, ['id', 'role', 'speakerName', 'text', 'createdAt', 'source', 'intent', 'score', 'explanation', 'modelVersion', 'documentIds'], 'Message');
       if (message.role !== 'user' && message.role !== 'assistant') fail('Auteur du message invalide.');
-      var item = { id: textValue(message.id, 'Identifiant du message', 100, false), role: message.role, text: textValue(message.text, 'Message', LIMITS.message, false), createdAt: dateValue(message.createdAt, 'Date du message') };
+      var item = { id: textValue(message.id, 'Identifiant du message', 100, false), role: message.role, text: textValue(message.text, 'Message', message.role === 'assistant' ? LIMITS.assistantMessage : LIMITS.message, false), createdAt: dateValue(message.createdAt, 'Date du message') };
       if (message.speakerName !== undefined) item.speakerName = textValue(message.speakerName, 'Nom au moment du message', 60, false);
       if (message.modelVersion !== undefined) item.modelVersion = message.modelVersion === null ? null : textValue(message.modelVersion, 'Version utilisée pour le message', 100, false);
-      if (message.source != null) { if (['rule', 'model', 'memory', 'unknown'].indexOf(message.source) < 0) fail('Source de réponse inconnue.'); item.source = message.source; }
+      // Historical selections survive removal of the original attachments.
+      if (message.documentIds !== undefined) item.documentIds = validateDocumentIds(message.documentIds);
+      if (message.source != null) { if (['rule', 'model', 'memory', 'unknown', 'document'].indexOf(message.source) < 0) fail('Source de réponse inconnue.'); item.source = message.source; }
       if (message.intent !== undefined) item.intent = message.intent === null ? null : validIntent(message.intent);
       if (message.score !== undefined) item.score = message.score === null ? null : finite(message.score, 'Score de réponse', 0, 1);
-      if (message.explanation !== undefined) item.explanation = textValue(message.explanation, 'Explication de réponse', 2000, true);
+      if (message.explanation !== undefined) item.explanation = textValue(message.explanation, 'Explication de réponse', 4000, true);
       return item;
     });
     ensureUnique(output.messages, 'id', 'Messages');
@@ -577,7 +713,8 @@
   }
 
   return Object.freeze({ VERSION: VERSION, LIMITS: LIMITS, INTENTS: INTENTS, SEED_EXAMPLES: SEED_EXAMPLES,
-    createState: createState, handleMessage: handleMessage, referent: referent, train: train,
-    predict: predict, evaluate: evaluate, addExample: addExample, exportState: exportState,
+    createState: createState, handleMessage: handleMessage, reply: handleMessage, referent: referent, train: train,
+    predict: predict, evaluate: evaluate, evaluateExamples: evaluateExamples, addExample: addExample, addExamples: addExamples,
+    addDocument: addDocument, removeDocument: removeDocument, exportState: exportState,
     importState: importState, runSelfTests: runSelfTests, recordEvent: recordEvent, appendTrainingRun: appendTrainingRun });
 }));
