@@ -26,9 +26,9 @@
 <body>
   <header>
     <a class="back" href="./">← Revenir à POI</a>
-    <p class="tag">Le guide · Version 0.1.0</p>
+    <p class="tag">Le guide · Version 0.2.0</p>
     <h1>Votre espace POI.</h1>
-    <p class="lead">POI est une base de travail légère pour expérimenter sur votre iPhone : un petit modèle qui s’entraîne, une identité réglable et une mémoire que vous pouvez consulter et exporter.</p>
+    <p class="lead">POI est une base de travail locale pour votre iPhone : un petit modèle qui s’entraîne, une mémoire consultable et des documents dont vous pouvez extraire, rechercher et exporter le texte.</p>
   </header>
   <main>
     <section>
@@ -67,6 +67,15 @@
       </div>
       <p>Si une phrase est mal classée, utilisez l’action de correction proposée pour choisir l’intention attendue. Vous pouvez aussi ajouter une formulation dans <strong>Apprendre</strong>, avec sa bonne étiquette, puis relancer l’entraînement.</p>
       <p>Variez les formulations : « Comment t’appelles-tu ? » et « Quel est ton nom ? » sont deux exemples de la même intention. Des exemples variés et correctement étiquetés sont plus utiles que de nombreuses copies de la même phrase.</p>
+      <h3>Apprendre une salutation comme « Yo »</h3>
+      <ol class="steps">
+        <li>Dans <strong>Apprendre → Donner des exemples</strong>, choisissez <strong>Salutation</strong>.</li>
+        <li>Écrivez <code>Yo</code>, puis une nouvelle ligne et <code>Salut</code>. Une ligne correspond à une formulation ; n’écrivez pas <code>Yo=Bonjour</code>. Le signe « = » n’enseigne pas une équivalence.</li>
+        <li>Ajoutez les exemples, puis lancez un essai avec <strong>400 passages</strong>. La liste actuelle des exemples est conservée entre les essais ; 800 passages sont aussi disponibles si nécessaire.</li>
+        <li>Comparez le jeu de contrôle et les exemples personnels avant d’adopter. Une version qui régresse demande une confirmation explicite ; vous pouvez revenir à la version précédente.</li>
+        <li>Après adoption, revenez dans <strong>Conversation</strong> et envoyez simplement <code>Yo</code>.</li>
+      </ol>
+      <p>Répéter deux fois un essai à 200 passages ne revient pas à un essai de 400 passages : chaque entraînement repart des mêmes poids initiaux. Les résultats sur vos exemples personnels montrent leur reconnaissance, pas une capacité générale à comprendre de nouvelles phrases.</p>
       <div class="note"><strong>Gardez POI ouverte pendant l’entraînement.</strong> iOS peut suspendre une page en arrière-plan. Attendez la fin et la confirmation de sauvegarde avant de quitter l’app.</div>
       <p>Le petit modèle ajuste réellement ses paramètres numériques à partir des exemples. Chaque séance repart de poids nuls et utilise tous les exemples conservés ; la version active reste disponible jusqu’à l’adoption du nouvel essai. La simple conversation n’entraîne pas automatiquement un grand modèle de langage. Le score de classement affiché décrit la préférence du classifieur entre ses catégories ; il ne prouve pas que la réponse est vraie.</p>
       <h3>Comprendre les résultats</h3>
@@ -85,9 +94,25 @@
     </section>
 
     <section>
-      <h2>5. Exporter tout le travail conservé</h2>
+      <h2>5. Joindre un livre, un document ou une photo</h2>
+      <ol class="steps">
+        <li>Dans <strong>Conversation</strong>, touchez <strong>Joindre</strong> près du brouillon et choisissez votre fichier dans Fichiers ou votre photothèque.</li>
+        <li>Gardez la page ouverte pendant la lecture. L’avancement est affiché et vous pouvez annuler. Un gros PDF ou une reconnaissance de texte demande plus de temps qu’un fichier texte.</li>
+        <li>Vérifiez les pages lues, les avertissements et le texte extrait. Cochez les documents à utiliser pour votre question.</li>
+        <li>Écrivez <code>Étudie ce document</code> pour une fiche de lecture, ou <code>Recherche les passages sur la mémoire</code> pour retrouver des extraits. Les réponses indiquent les documents et les pages ou segments utilisés.</li>
+      </ol>
+      <p><strong>Formats pris en charge :</strong> texte TXT, Markdown, CSV, JSON, HTML, Word DOCX, PDF et images PNG, JPEG ou WebP. Pour un EPUB, un ancien fichier DOC, un document protégé ou une photo HEIC non reconnue, utilisez d’abord une copie PDF, TXT ou JPEG.</p>
+      <p><strong>La lecture reste locale et gratuite.</strong> POI conserve le fichier original, le texte extrait et les références sur cet appareil. Le contenu ne part vers aucun service d’analyse. Joindre un document n’entraîne pas automatiquement le modèle de conversation.</p>
+      <div class="note">Une fiche de lecture rassemble des passages et des mots récurrents. POI ne possède pas les capacités d’analyse générale de ChatGPT. Pour une photo, cette version lit le texte visible par reconnaissance optique ; elle ne décrit pas librement une scène, un visage, un tableau ou un schéma.</div>
+      <p>La reconnaissance du français peut confondre des lettres, des chiffres ou l’ordre des colonnes. Comparez les citations au document original avant de vous y fier. Si le livre est partiellement lu, le résultat le précise ; les pages non lues ne sont pas résumées.</p>
+      <p class="small">Limites de cette version : 6 documents, 8 Mio par fichier, 12 Mio d’originaux au total, 600 000 caractères extraits par document, jusqu’à 200 pages PDF avec texte. La reconnaissance des PDF scannés est limitée à 3 pages pour préserver les ressources de l’iPhone. La sauvegarde complète reste limitée à 25 Mio ; si l’ensemble ne tient plus, l’ajout est refusé et l’état précédent est conservé.</p>
+      <p class="small">Les modules PDF, Word et OCR se téléchargent à leur première utilisation depuis le site POI. Les textes déjà extraits restent accessibles hors ligne. Pour un nouvel import hors ligne, les composants nécessaires doivent déjà être disponibles ; testez le format souhaité en mode avion sur votre appareil.</p>
+    </section>
+
+    <section>
+      <h2>6. Exporter tout le travail conservé</h2>
       <p>Dans <strong>Atelier</strong>, utilisez <strong>Export complet</strong>. Vous obtenez une archive ZIP contenant une sauvegarde JSON restaurable, le rapport <code>rapport-poi-complet.html</code> lisible, les tableaux CSV et le manifeste décrivant l’export.</p>
-      <p>L’archive détaille les données effectivement conservées : conversations, faits, exemples, entraînements, mesures, journal, paramètres du modèle et évaluations. Les limites de rétention et les éventuels compteurs sont indiqués ; un export ne peut pas reconstituer des données déjà effacées ou qui n’ont jamais été enregistrées.</p>
+      <p>L’archive détaille les données effectivement conservées : conversations, faits, exemples, entraînements, mesures, journal, paramètres du modèle, évaluations et documents joints. Les originaux sont dans <code>documents/originaux/</code>, les textes extraits dans <code>documents/textes/</code>. Les métadonnées, les pages lues, les avertissements et les citations sont aussi conservés. Les limites de rétention et les éventuels compteurs sont indiqués ; un export ne peut pas reconstituer des données déjà effacées ou qui n’ont jamais été enregistrées.</p>
       <p class="small">Limites de cette version : 2 000 messages, 5 000 événements et 100 entraînements conservés. Quand ces historiques sont pleins, les entrées les plus anciennes sont retirées et comptées. La mémoire est limitée à 100 faits, et le jeu d’apprentissage à 400 exemples ; un ajout au-delà de ces limites est refusé.</p>
       <ol class="steps">
         <li>Enregistrez le ZIP dans <strong>Fichiers</strong> sur l’iPhone. Selon Safari, ouvrez la liste des téléchargements ou choisissez <strong>Enregistrer dans Fichiers</strong> depuis le menu de partage.</li>
@@ -101,20 +126,20 @@
     </section>
 
     <section>
-      <h2>6. Garder une copie autonome</h2>
-      <p>Le code fourni est sous <a href="LICENSE.txt">licence MIT</a>. L’application ne demande aucune clé d’API payante et n’appelle aucun service d’IA distant. Elle n’intègre pas d’outil d’analyse de fréquentation. L’hébergeur peut néanmoins recevoir les requêtes habituelles de chargement des fichiers du site.</p>
-      <p>Le paquet portable peut être publié sur un hébergement HTTPS statique. <strong>Cloudflare Pages propose actuellement une offre gratuite</strong> pour ce type de site, sous ses conditions et limites. Un compte tiers est nécessaire pour gérer un projet ; les conditions peuvent évoluer.</p>
+      <h2>7. Garder une copie autonome</h2>
+      <p>Le code POI est sous <a href="LICENSE.txt">licence MIT</a>. Les composants de lecture PDF, DOCX et OCR sont accompagnés de leurs licences dans le dossier <code>vendor</code>. L’application ne demande aucune clé d’API payante et n’appelle aucun service d’IA distant. Elle n’intègre pas d’outil d’analyse de fréquentation. L’hébergeur reçoit les requêtes habituelles de chargement des fichiers du site.</p>
+      <p>Le paquet portable peut être publié sur un hébergement HTTPS statique, comme le dépôt GitHub Pages utilisé pour POI. Conservez l’arborescence complète, y compris <code>vendor/</code>. Le code public de l’application ne contient aucune de vos sauvegardes personnelles.</p>
       <ol class="steps">
-        <li>Créez ou ouvrez votre compte Cloudflare, puis allez dans <strong>Workers &amp; Pages</strong>.</li>
-        <li>Créez un projet <strong>Pages</strong> avec l’option de téléversement direct / glisser-déposer. L’intitulé exact peut varier.</li>
-        <li>Déposez les fichiers du site, ou leur ZIP, avec <code>index.html</code>, <code>sw.js</code> et les autres fichiers directement à la racine du contenu publié. N’ajoutez pas vos sauvegardes personnelles au site.</li>
-        <li>Déployez, puis ouvrez l’adresse HTTPS <code>…pages.dev</code> sur l’iPhone. Reprenez les étapes d’installation et de vérification hors ligne ci-dessus.</li>
+        <li>Décompressez <code>poi-application-complete.zip</code>. Ce paquet contient le programme, sans vos conversations, documents ou apprentissages personnels.</li>
+        <li>Dans votre dépôt GitHub, déposez les fichiers de l’application avec <code>index.html</code> à la racine et le dossier <code>vendor/</code> complet. Le ZIP ne doit pas être le seul fichier du dépôt.</li>
+        <li>Dans <strong>Settings → Pages</strong>, choisissez <strong>Deploy from a branch</strong>, puis la branche <strong>main</strong> et <strong>/(root)</strong>.</li>
+        <li>Une fois le déploiement réussi, ouvrez l’adresse HTTPS indiquée par GitHub. Reprenez les étapes d’installation et de vérification hors ligne ci-dessus.</li>
       </ol>
       <p class="small">Un ordinateur peut rendre le téléversement plus commode. Un fichier HTML ouvert directement depuis Fichiers n’offre pas la même installation hors ligne qu’un site HTTPS. Un changement d’adresse crée un nouvel espace de stockage : transférez vos données par export/import.</p>
     </section>
 
     <section>
-      <h2>7. Repères et limites</h2>
+      <h2>8. Repères et limites</h2>
       <p>POI est un prototype pédagogique conçu pour un petit écran et des calculs modestes. Elle ne remplace pas un assistant généraliste et n’a pas été testée physiquement sur votre iPhone SE. La vérification finale du mode avion et de la sauvegarde doit se faire sur votre appareil.</p>
       <p>Le premier chargement, l’installation et les mises à jour ont besoin d’Internet. Une fois le cache complet enregistré et vérifié, les fonctions de conversation, de mémoire et d’entraînement prévues s’exécutent localement. L’effacement des données du site peut supprimer aussi cette disponibilité hors ligne.</p>
       <h3>Documentation de référence</h3>
@@ -122,12 +147,11 @@
         <li><a href="https://support.apple.com/fr-fr/guide/iphone/iph42ab2f3a7/ios" target="_blank" rel="noopener noreferrer">Apple — Ajouter un site à l’écran d’accueil</a>.</li>
         <li><a href="https://support.apple.com/fr-fr/111882" target="_blank" rel="noopener noreferrer">Apple — iPhone SE, 2e génération</a>.</li>
         <li><a href="https://webkit.org/blog/14403/updates-to-storage-policy/" target="_blank" rel="noopener noreferrer">WebKit — Conservation et suppression du stockage web</a>.</li>
-        <li><a href="https://developers.cloudflare.com/pages/get-started/direct-upload/" target="_blank" rel="noopener noreferrer">Cloudflare Pages — Publier des fichiers statiques</a>.</li>
-        <li><a href="https://developers.cloudflare.com/pages/platform/limits/" target="_blank" rel="noopener noreferrer">Cloudflare Pages — Limites de l’offre gratuite</a>.</li>
+        <li><a href="https://docs.github.com/fr/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site" target="_blank" rel="noopener noreferrer">GitHub Pages — Configurer la publication</a>.</li>
       </ul>
       <p class="small">Ces liens s’ouvrent sur Internet. Le reste de ce guide est inclus dans les fichiers hors ligne de POI.</p>
     </section>
   </main>
-  <footer>POI · Atelier d’IA · Version 0.1.0<br>Une base simple à comprendre, à modifier et à conserver.</footer>
+  <footer>POI · Atelier d’IA · Version 0.2.0<br>Une base simple à comprendre, à modifier et à conserver.</footer>
 </body>
 </html>

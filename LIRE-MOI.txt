@@ -1,76 +1,95 @@
-POI — ATELIER D’IA
-Base de travail complète et portable
+POI 0.2.0 — ATELIER D’IA LOCAL
 
-CE QUE CONTIENT CETTE ARCHIVE
-Les fichiers source HTML, CSS et JavaScript ainsi que les icônes et la
-documentation sont directement à la racine. Il s’agit d’une application web,
-pas d’une application iPhone native ou d’un fichier d’installation App Store.
+Adresse actuelle : https://4jh75v7tt6-ctrl.github.io/poi/
+Application 0.2.0 ; moteur 1.1.0 ; exporteur 0.2.0 ; documents 1.0.0.
 
-Cette archive de code ne contient aucune donnée personnelle : aucune
-conversation conservée, aucun fait utilisateur ni sauvegarde de travail. Les
-pages de contrôle et les résultats de test de la session n’y figurent pas.
-Le moteur comporte ses exemples pédagogiques et ses contrôles fonctionnels
-intégrés, utilisables depuis l’application.
+Cette archive contient le code de l’application, ses icônes, son guide et ses
+dépendances locales. Elle ne contient aucune donnée personnelle utilisateur.
+Pour sauvegarder vos conversations et pièces jointes, faites séparément un
+« Exporter le dossier complet » dans l’onglet Atelier de POI.
 
-FICHIERS
-• index.html : interface de POI.
-• styles.css : présentation claire/sombre et adaptation au petit écran.
-• app.js : interface, brouillon, sauvegarde locale et actions utilisateur.
-• engine.js : règles, mémoire et classifieur local de six intentions (POICore).
-• exporter.js : génération des exports détaillés (POIExport).
-• sw.js : installation et cache hors ligne, version poi-v1.0.7.
-• manifest.webmanifest : configuration de l’application web.
-• icon.svg et apple-touch-icon.png : icônes.
-• guide.html : guide complet en français, avec sources et limites.
-• LICENSE.txt : licence MIT du code et de la documentation.
+INSTALLER SUR IPHONE
 
-INSTALLATION SUR L’IPHONE
-1. Publiez les fichiers sur un hébergement statique HTTPS. Placez index.html
-   et les autres fichiers directement à la racine de l’adresse publiée.
-   Le guide présente notamment la publication sur Cloudflare Pages.
-2. Ouvrez cette adresse dans Safari avec une connexion Internet.
-3. Touchez Partager > Sur l’écran d’accueil, puis ouvrez la nouvelle icône.
-4. Dans Atelier, attendez le statut « Prêt hors ligne ».
-5. Vérifiez en mode avion : fermez puis rouvrez POI depuis son icône.
+1. Ouvrez l’adresse ci-dessus dans Safari avec une connexion Internet.
+2. Choisissez Partager → Sur l’écran d’accueil, puis ajoutez POI.
+3. Ouvrez POI depuis l’icône et attendez le statut du socle hors ligne prêt.
+4. Vérifiez ensuite son ouverture et une commande simple en mode avion.
 
-Ouvrir index.html directement dans Fichiers ne réalise pas cette installation
-hors ligne. La publication initiale et le premier chargement nécessitent une
-connexion. L’application n’appelle pas d’API d’IA payante ni de service d’IA
-distant ; elle n’intègre pas d’outil d’analyse de fréquentation. Les conditions
-de l’hébergeur sont indépendantes du code et peuvent évoluer.
+POI est une application web, pas une application native de l’App Store.
+Le premier chargement et les mises à jour demandent une connexion HTTPS.
+Ouvrir index.html directement dans Fichiers ou dans le ZIP ne l’installe pas.
 
-CONSERVER VOTRE TRAVAIL
-Faites séparément un « Export complet » depuis l’application : cette autre
-archive contient les conversations, faits, exemples, entraînements, paramètres
-et mesures effectivement conservés. Elle contient des données en clair. Ne la
-publiez pas avec le code du site.
+Les modules PDF, Word et OCR sont téléchargés depuis le site à leur première
+utilisation. Leur cache est optionnel et distinct du socle. Pour un nouvel
+import hors ligne, les composants du format doivent déjà être disponibles :
+testez ce format après une première utilisation connectée. Les textes déjà
+extraits restent consultables localement.
 
-Pour restaurer, extrayez le ZIP de travail et importez sauvegarde-poi.json
-dans Atelier. La restauration remplace l’état actuel après confirmation.
-Un changement d’adresse web crée un autre espace de stockage : exportez depuis
-l’ancienne adresse avant de restaurer dans la nouvelle.
+APPRENDRE « YO »
 
-CONSERVER LE BOUTON DE TÉLÉCHARGEMENT
-Une archive ne peut pas se contenir elle-même. Si vous réhébergez POI et voulez
-conserver le bouton « Télécharger la copie de l’application », publiez aussi
-ce ZIP non décompressé sous le nom poi-application-complete.zip, à côté des
-fichiers décompressés. Il n’est pas nécessaire au fonctionnement de l’atelier
-et n’est pas inclus dans son cache hors ligne.
+Dans Apprendre, écrivez une formulation par ligne :
+Yo
+Hello
 
-MODIFIER LA BASE
-Les fichiers HTML, CSS et JavaScript se modifient dans un éditeur de texte.
-Aucune compilation ni installation de dépendances n’est nécessaire. Après
-une modification, changez la constante VERSION dans sw.js (par exemple
-poi-v1.0.7 en poi-v1.0.8), puis publiez les fichiers ensemble. Cela permet
-l’installation d’un nouveau cache cohérent. Vérifiez l’interface, le stockage
-et le mode avion après la mise à jour.
+Choisissez Salutation → Ajouter les exemples → 400 passages → Entraîner une
+nouvelle version. Examinez la comparaison puis choisissez Adopter cette
+version. Retournez dans Conversation et envoyez Yo seul.
 
-LIMITES
-POI est un prototype pédagogique : des règles, une mémoire explicite et un
-petit classifieur entraînable construisent ses réponses. Ce n’est pas un grand
-modèle de langage généraliste. Gardez l’application ouverte pendant
-l’entraînement. Le stockage du navigateur peut être supprimé : exportez
-régulièrement votre travail. La livraison ne constitue pas un test physique
-sur votre iPhone.
+Écrire Yo=Bonjour ne crée pas d’équivalence. Ajouter un exemple ne modifie
+pas le modèle actif avant entraînement et adoption. Les six intentions
+sont Identité, Rôle, Capacités, Mémoriser, Rappeler et Salutation. Ce petit
+classifieur n’a pas les capacités générales de ChatGPT. Gardez POI ouvert
+pendant le calcul. Une baisse d’évaluation doit être examinée avant adoption.
 
-Le guide détaillé se trouve dans guide.html.
+JOINDRE ET LIRE
+
+Dans Conversation : Joindre → choisir un fichier → attendre la lecture →
+cocher les documents à utiliser. Exemples de demandes : « Fais une fiche
+de lecture » ou « Recherche les passages sur la mémoire ».
+
+Formats : TXT, Markdown, CSV, JSON, HTML, PDF, DOCX, PNG, JPEG et WebP.
+Une fiche rassemble des extraits cités et des mots récurrents. Les photos
+sont lues par reconnaissance du texte en français ; POI ne décrit pas une
+scène et ne réalise pas une analyse générale d’un livre. Vérifiez les erreurs
+OCR et les avertissements. Les documents ne servent pas automatiquement
+d’exemples d’apprentissage.
+
+Limites : 6 documents ; 8 Mio par original ; 12 Mio d’originaux au total ;
+600 000 caractères extraits par document ; 200 premières pages PDF ;
+3 pages OCR par PDF ; images de 24 mégapixels au maximum ; sauvegarde
+restaurable complète de 25 Mio. Une lecture partielle est signalée. Une
+page non lue ne peut pas fournir de passage à une réponse.
+
+SAUVEGARDER VOS DONNÉES
+
+Atelier → Exporter le dossier complet produit un ZIP personnel contenant
+18 fichiers de base et 2 fichiers supplémentaires par document : original
+et texte extrait. Le rapport, les tableaux, les paramètres et le journal
+accompagnent sauvegarde-poi.json, qui permet la restauration complète.
+
+Dans Fichiers sur iPhone, ouvrez ce ZIP pour l’extraire. Dans POI, choisissez
+Restaurer une sauvegarde puis sauvegarde-poi.json. La restauration remplace
+l’état actuel après confirmation. Les anciens fichiers JSON sans documents
+restent lisibles. Conservez des sauvegardes régulières dans un endroit privé.
+
+Seul le travail encore conservé est exporté. Historiques limités à 2 000
+messages, 5 000 événements et 100 séances ; mémoire limitée à 100 faits et
+apprentissage à 400 exemples. Les compteurs de rétention indiquent les
+entrées retirées par les limites ; une suppression n’est pas annulable sans
+sauvegarde antérieure.
+
+Les contenus privés restent dans le stockage local du navigateur ou de
+l’application web. Ils ne sont pas envoyés à un service de traitement.
+Ce stockage peut être effacé et peut différer selon l’adresse ou le contexte
+de navigation. Les exports sont en clair, originaux compris : ne les
+partagez pas sans les vérifier.
+
+CODE ET LICENCES
+
+Le ZIP de code contient index.html à sa racine et le dossier vendor/ complet.
+Pour le dépôt GitHub Pages actuel : tous les fichiers extraits à la racine,
+puis Settings → Pages → main → /(root). Conservez .nojekyll et vendor/.
+
+Code POI : licence MIT dans LICENSE.txt. Dépendances : licences respectives
+dans vendor/ et inventaire vendor/NOTICES.json. Conservez leurs notices.
+Le guide d’utilisation complet est dans guide.html et README.md.

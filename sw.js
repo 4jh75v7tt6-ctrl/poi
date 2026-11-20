@@ -1,16 +1,18 @@
-/* POI 0.1.0 — offline shell. No conversations or learned data are cached here. */
+/* POI 0.2.0 — offline shell. Personal files and conversations never enter this cache. */
 'use strict';
 
-const VERSION = 'poi-v1.0.7';
+const VERSION = 'poi-v1.1.2';
 const BASE = new URL('./', self.registration.scope);
 const PREFIX = 'poi:' + encodeURIComponent(BASE.pathname) + ':';
 const META_CACHE = PREFIX + 'metadata';
+const OPTIONAL_CACHE = PREFIX + VERSION + ':document-modules';
 const POINTER = new URL('__poi_shell_' + VERSION, BASE).href;
 const INDEX_URL = new URL('index.html', BASE).href;
 const ASSETS = [
   ['index.html', 'html'],
   ['styles.css', 'css'],
   ['app.js', 'js'],
+  ['documents.js', 'js'],
   ['engine.js', 'js'],
   ['exporter.js', 'js'],
   ['manifest.webmanifest', 'manifest'],
@@ -20,6 +22,26 @@ const ASSETS = [
   ['LICENSE.txt', 'text']
 ].map(([path, kind]) => ({ path, kind, url: new URL(path, BASE).href }));
 const ASSET_BY_URL = new Map(ASSETS.map(asset => [asset.url, asset]));
+// BEGIN DOCUMENT ASSETS — generated from the shipped vendor inventory.
+const DOCUMENT_PATHS = [
+  "vendor/jszip/jszip.min.js",
+  "vendor/ocr/fra.traineddata",
+  "vendor/ocr/tesseract-core-lstm.wasm.js",
+  "vendor/ocr/tesseract.min.js",
+  "vendor/ocr/worker.min.js",
+  "vendor/pdfjs/pdf.min.mjs",
+  "vendor/pdfjs/pdf.worker.min.mjs",
+  "vendor/pdfjs/resources.zip",
+  "vendor/pdfjs/wasm/jbig2.wasm",
+  "vendor/pdfjs/wasm/openjpeg.wasm",
+  "vendor/pdfjs/wasm/openjpeg_nowasm_fallback.js",
+  "vendor/pdfjs/wasm/qcms_bg.wasm"
+];
+// END DOCUMENT ASSETS
+const OPTIONAL_ASSETS = DOCUMENT_PATHS.map(path => ({path,
+  kind:/\.(?:m?js)$/.test(path) ? 'js' : /\.(?:txt|md)$/.test(path) ? 'text' : /\.json$/.test(path) ? 'json' : 'binary',
+  url:new URL(path, BASE).href}));
+const OPTIONAL_BY_URL = new Map(OPTIONAL_ASSETS.map(asset => [asset.url, asset]));
 const HTML_CANONICAL = new Map([
   [INDEX_URL, BASE.href],
   [new URL('guide.html', BASE).href, new URL('guide', BASE).href]
@@ -63,11 +85,19 @@ async function validResponse(response, asset, expectedURL) {
     manifest: ['application/manifest+json', 'application/json'],
     svg: ['image/svg+xml'],
     png: ['image/png'],
-    text: ['text/plain']
+    text: ['text/plain', 'text/markdown'],
+    json: ['application/json', 'text/json'],
+    binary: ['application/octet-stream', 'binary/octet-stream', 'application/wasm', 'application/zip', 'application/x-zip-compressed', 'application/gzip', 'font/otf', 'font/ttf', 'application/x-font-ttf', 'application/vnd.ms-opentype']
   };
   if (!allowed[asset.kind].includes(mime)) return false;
   if (asset.kind === 'html') return appMarker(await response.clone().text());
-  if (['js', 'css', 'manifest', 'text'].includes(asset.kind)) {
+  if (asset.kind === 'binary') {
+    const data = new Uint8Array(await response.clone().arrayBuffer());
+    if (!data.length) return false;
+    const opening = String.fromCharCode(...data.subarray(0, 128));
+    if (/^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b|<form\b)/i.test(opening)) return false;
+  }
+  if (['js', 'css', 'manifest', 'text', 'json'].includes(asset.kind)) {
     const body = await response.clone().text();
     if (/^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b|<form\b)/i.test(body)) return false;
     if (asset.kind === 'manifest') {
@@ -140,8 +170,18 @@ async function offlineStatus() {
   }
   return {
     type: 'OFFLINE_STATUS', version: VERSION,
-    complete: missing.length === 0, shellAvailable, missing
+    complete: missing.length === 0, shellAvailable, missing,
+    documentModules: await documentModuleStatus()
   };
+}
+
+async function documentModuleStatus() {
+  const names = await caches.keys();
+  const cache = names.includes(OPTIONAL_CACHE) ? await caches.open(OPTIONAL_CACHE) : null;
+  const cached = cache ? await Promise.all(OPTIONAL_ASSETS.map(asset => cache.match(asset.url))) : [];
+  const count = cached.filter(Boolean).length;
+  return {cachedFiles:count,totalFiles:OPTIONAL_ASSETS.length,complete:count === OPTIONAL_ASSETS.length,
+    note:'Modules téléchargés à la demande. Les textes déjà extraits restent dans votre sauvegarde locale.'};
 }
 
 self.addEventListener('install', event => {
@@ -178,7 +218,7 @@ self.addEventListener('activate', event => {
     if (keep) {
       const names = await caches.keys();
       await Promise.all(names.filter(name => name.startsWith(PREFIX) &&
-        name !== META_CACHE && name !== keep).map(name => caches.delete(name)));
+        name !== META_CACHE && name !== keep && name !== OPTIONAL_CACHE).map(name => caches.delete(name)));
     }
     await self.clients.claim();
   })());
@@ -230,6 +270,16 @@ async function assetResponse(request, asset) {
   return response;
 }
 
+async function documentAssetResponse(request, asset) {
+  const cache = await caches.open(OPTIONAL_CACHE);
+  const saved = await cache.match(asset.url);
+  if (saved) return saved;
+  const response = await fetchValidated(request, asset, 30000);
+  // A full browser cache must not prevent a connected document from opening.
+  try { await cache.put(asset.url, response.clone()); } catch (_) { /* Optional cache. */ }
+  return response;
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -244,6 +294,10 @@ self.addEventListener('fetch', event => {
   }
   const asset = ASSET_BY_URL.get(new URL(url.pathname, BASE.origin).href);
   if (asset) event.respondWith(assetResponse(request, asset));
+  else {
+    const optional = OPTIONAL_BY_URL.get(new URL(url.pathname, BASE.origin).href);
+    if (optional) event.respondWith(documentAssetResponse(request, optional));
+  }
 });
 
 self.addEventListener('message', event => {

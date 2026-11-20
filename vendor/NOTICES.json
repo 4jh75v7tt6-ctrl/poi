@@ -1,0 +1,29 @@
+{
+  "pdfjs-dist": {
+    "version": "5.6.205",
+    "source": "https://github.com/mozilla/pdf.js",
+    "build": "legacy ESM; reader and worker; bundled cmaps/fonts/image decoders"
+  },
+  "jszip": {
+    "version": "3.10.1",
+    "source": "https://github.com/Stuk/jszip"
+  },
+  "tesseract.js": {
+    "version": "7.0.0",
+    "source": "https://github.com/naptha/tesseract.js"
+  },
+  "tesseract.js-core": {
+    "version": "7.0.0",
+    "source": "https://github.com/naptha/tesseract.js-core",
+    "build": "LSTM non-SIMD embedded WebAssembly; selected explicitly for compact offline bundle and compatibility"
+  },
+  "tessdata_fast/fra.traineddata": {
+    "git_tree": "87416418657359cb625c412a48b6e1d6d41c29bd",
+    "git_blob": "d9e2b2160be0d1ca3b8f1bf2730fae476ef3b4a6",
+    "sha256": "ced037562e8c80c13122dece28dd477d399af80911a28791a66a63ac1e3445ca",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/fra.traineddata",
+    "language": "French",
+    "size_bytes": 1130365
+  },
+  "network_policy": "All runtime URLs are relative to this application origin. No CDN, remote OCR or remote model API."
+}

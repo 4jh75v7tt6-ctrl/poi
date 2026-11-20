@@ -11,13 +11,13 @@
   else root.POIExport = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (getCore) {
   'use strict';
-  var VERSION = '0.1.0';
+  var VERSION = '0.2.0';
   var encoder = new TextEncoder();
   var INTENT_LABELS = {
     identity: 'Identité', role: 'Rôle', capabilities: 'Capacités',
     remember: 'Mémorisation', recall: 'Rappel', greeting: 'Salutation'
   };
-  var SOURCE_LABELS = {rule: 'Règle programmée', model: 'Modèle appris', memory: 'Mémoire', unknown: 'Demande non reconnue'};
+  var SOURCE_LABELS = {rule: 'Règle programmée', model: 'Modèle appris', memory: 'Mémoire', document: 'Document joint', unknown: 'Demande non reconnue'};
   var STATUS_LABELS = {evaluated: 'Évalué', adopted: 'Adopté', rejected: 'Refusé', rolled_back: 'Retour à la version précédente', candidate: 'Candidat'};
   var LIMITATIONS = [
     'Cet export décrit toutes les données présentes dans l’état au moment de sa création. Il ne reconstitue pas les données supprimées, les échanges absents ni les éléments écartés par les limites de conservation.',
@@ -26,6 +26,8 @@
     'Un score de classification n’est pas une probabilité que la réponse soit vraie. Les refus et les résultats inconnus doivent être conservés dans l’interprétation des mesures.',
     'Les mesures sur les exemples d’entraînement et sur le petit jeu d’évaluation ont des usages différents. Un résultat élevé sur ce jeu limité ne démontre pas une compréhension générale du français.',
     'Les évaluations utilisées pour choisir une version ne constituent plus un test final indépendant. Prévoir d’autres formulations pour une évaluation finale.',
+    'Les documents joints sont conservés avec leur fichier original, leur texte extrait et les limites de lecture. Une fiche de lecture est une sélection automatique de passages, pas une analyse générale ni une vérification des affirmations de l’ouvrage.',
+    'La reconnaissance de texte peut commettre des erreurs. Les références renvoient aux pages lues du PDF ; les autres formats utilisent des segments de texte et non une pagination imprimée. Une lecture partielle est signalée et ne représente pas le document entier.',
     'Le journal rapporte des opérations observables. Il ne décrit aucun raisonnement interne privé, aucune expérience subjective ni une introspection du système.',
     'Les fichiers exportés peuvent contenir vos informations personnelles, conversations et exemples. Conservez-les dans un emplacement de confiance ; les fichiers ne sont pas chiffrés.',
     'Le programme n’envoie pas le contenu de cet export à un service externe. Le stockage local du navigateur peut être effacé ; l’export est une copie indépendante.'
@@ -92,6 +94,10 @@
       userExamples: arr(state.examples).filter(function (e) { return e.origin !== 'starter'; }).length,
       trainingRuns: arr(state.trainingRuns).length,
       events: arr(state.events).length,
+      documents: arr(state.documents).length,
+      documentOriginalBytes: arr(state.documents).reduce(function (sum, doc) { return sum + (doc.size || 0); }, 0),
+      documentPages: arr(state.documents).reduce(function (sum, doc) { return sum + arr(doc.pages).length; }, 0),
+      documentCharacters: arr(state.documents).reduce(function (sum, doc) { return sum + arr(doc.pages).reduce(function (chars, page) { return chars + text(page.text).length; }, 0); }, 0),
       currentParameters: parameterRows(state.model, 'actuel').length,
       previousParameters: parameterRows(state.previousModel, 'précédent').length
     };
@@ -174,16 +180,45 @@
       details('Tous les paramètres (' + parameterRows(model,entry.scope,entry.runId).length + ')', table(['Type','Index','Classe','Caractéristique','Valeur exacte'], parameterRows(model,entry.scope,entry.runId).map(function (row) { return [row[3],row[4],row[6],row[8],row[9]]; }))) +
       details('Objet modèle intégral', '<pre>' + pretty(model) + '</pre>') + '</article>';
   }
+  function fileBytes(content) { return content instanceof Uint8Array ? content : encoder.encode(text(content)); }
+  function originalBytes(doc) {
+    var binary = atob(doc.dataBase64 || '');
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (bytes.length !== doc.size) throw new Error('Taille incohérente du document : ' + doc.name);
+    return bytes;
+  }
+  function documentMetadata(doc) {
+    var metadata = {};
+    Object.keys(doc).forEach(function (key) { if (key !== 'dataBase64') metadata[key] = doc[key]; });
+    return metadata;
+  }
+  function documentPaths(doc, index) {
+    var filename = text(doc.name).normalize('NFC').replace(/[\x00-\x1f\x7f/\\:<>"|?*]/g, '_').replace(/^\.+/, '_').slice(0,150) || 'document';
+    var prefix = String(index + 1).padStart(3, '0') + '-';
+    return {original:'documents/originaux/' + prefix + filename, extracted:'documents/textes/' + prefix + filename + '.txt'};
+  }
+  function documentReport(doc, index) {
+    var paths = documentPaths(doc, index);
+    var metadata = documentMetadata(doc);
+    delete metadata.pages;
+    return '<article class="block"><h3>' + escapeHTML(doc.name) + '</h3>' +
+      keyValues(metadata) + '<p>Original dans l’archive : <code>' + escapeHTML(paths.original) + '</code>. Texte extrait : <code>' + escapeHTML(paths.extracted) + '</code>.</p>' +
+      details('Texte intégral extrait (' + arr(doc.pages).length + ' pages ou segments)', arr(doc.pages).map(function (page) {
+        return '<h4>' + (doc.kind === 'pdf' ? 'Page ' : 'Segment ') + escapeHTML(page.number) + '</h4><pre>' + escapeHTML(page.text) + '</pre>';
+      }).join('') || '<p class="empty">Aucun texte extrait.</p>') + '</article>';
+  }
   function generateReport(state, rawContext) {
     state = state || {};
     var context = getContext(rawContext);
     var counts = countsFor(state);
     var identity = state.identity || {};
+    var readableState = Object.assign({}, state, {documents:arr(state.documents).map(documentMetadata)});
     var core = getCore();
     var version = context.appVersion || (core && core.VERSION) || VERSION;
     var transcript = arr(state.messages).map(function (message,index) {
       return '<article class="message ' + (message.role === 'user' ? 'user' : 'assistant') + '"><div class="message-head"><strong>' + escapeHTML(valueOr(message.speakerName, message.role === 'user' ? 'Utilisateur' : message.role === 'assistant' ? 'Assistant' : valueOr(message.role,'Auteur inconnu'))) + '</strong><span>' + escapeHTML(dateLabel(message.createdAt)) + '</span></div><p class="message-text">' + escapeHTML(message.text) + '</p>' +
-        '<p class="metadata">Message ' + (index + 1) + ' · ' + escapeHTML(message.id) + (message.source ? ' · ' + escapeHTML(label(SOURCE_LABELS,message.source)) : '') + (message.intent ? ' · ' + escapeHTML(label(INTENT_LABELS,message.intent)) : '') + (message.modelVersion ? ' · modèle ' + escapeHTML(message.modelVersion) : '') + (finite(message.score) ? ' · score ' + escapeHTML(message.score) : '') + '</p>' +
+        '<p class="metadata">Message ' + (index + 1) + ' · ' + escapeHTML(message.id) + (message.source ? ' · ' + escapeHTML(label(SOURCE_LABELS,message.source)) : '') + (message.intent ? ' · ' + escapeHTML(label(INTENT_LABELS,message.intent)) : '') + (message.modelVersion ? ' · modèle ' + escapeHTML(message.modelVersion) : '') + (finite(message.score) ? ' · score ' + escapeHTML(message.score) : '') + (arr(message.documentIds).length ? ' · documents sélectionnés : ' + escapeHTML(message.documentIds.join(', ')) : '') + '</p>' +
         (message.explanation ? '<p class="explanation">' + escapeHTML(message.explanation) + '</p>' : '') +
         details('Enregistrement exact de ce message', '<pre>' + pretty(message) + '</pre>') + '</article>';
     }).join('');
@@ -201,12 +236,13 @@
     var dropped = Object.keys(retention).some(function (key) { return finite(retention[key]) && retention[key] > 0; });
     var body = '<header class="hero"><p class="eyebrow">POI · ATELIER D’IA</p><h1>Carnet d’apprentissage</h1><p class="subtitle">Export détaillé de toutes les données conservées</p><p>' + escapeHTML(dateLabel(context.createdAt)) + '</p><p class="metadata">Application ' + escapeHTML(version) + ' · schéma ' + escapeHTML(valueOr(state.schemaVersion,'non renseigné')) + ' · exporteur ' + VERSION + '</p></header>' +
       '<div class="notice"><strong>Une copie personnelle, non chiffrée.</strong> Ce rapport contient les conversations, faits, exemples et résultats présents dans votre application. Vérifiez son contenu avant de le partager.</div>' +
-      '<nav class="contents" aria-label="Sommaire"><a href="#synthese">Vue d’ensemble</a><a href="#identite">Identité</a><a href="#conversation">Conversation</a><a href="#memoire">Mémoire</a><a href="#exemples">Exemples</a><a href="#apprentissage">Apprentissages</a><a href="#modeles">Modèles</a><a href="#evaluation">Évaluation</a><a href="#journal">Journal</a><a href="#diagnostics">Contrôles</a><a href="#contexte">Contexte</a><a href="#limites">Limites</a></nav>' +
+      '<nav class="contents" aria-label="Sommaire"><a href="#synthese">Vue d’ensemble</a><a href="#identite">Identité</a><a href="#conversation">Conversation</a><a href="#documents">Documents</a><a href="#memoire">Mémoire</a><a href="#exemples">Exemples</a><a href="#apprentissage">Apprentissages</a><a href="#modeles">Modèles</a><a href="#evaluation">Évaluation</a><a href="#journal">Journal</a><a href="#diagnostics">Contrôles</a><a href="#contexte">Contexte</a><a href="#limites">Limites</a></nav>' +
       '<section id="synthese"><h2>Vue d’ensemble</h2><div class="stats">' + [[counts.messages,'messages'],[counts.facts,'faits mémorisés'],[counts.examples,'exemples'],[counts.trainingRuns,'entraînements']].map(function (stat) { return '<div><strong>' + stat[0] + '</strong><span>' + stat[1] + '</span></div>'; }).join('') + '</div><p>Ce rapport distingue les <strong>règles programmées</strong>, la <strong>mémoire de faits</strong> et les <strong>paramètres appris</strong>. Ces mécanismes sont différents et aucun ne prouve, à lui seul, une maîtrise générale du langage.</p>' +
       keyValues({creationEtat:state.meta && state.meta.createdAt,derniereModification:state.meta && state.meta.updatedAt,dateExportUTC:context.createdAt,modeleEntraine:!!state.model,versionCourante:state.model && state.model.version,versionPrecedente:state.previousModel && state.previousModel.version}) +
       '<h3>Conservation de l’historique</h3><p>' + (dropped ? 'Des éléments ont été écartés par les limites de conservation. Les compteurs ci-dessous indiquent les pertes connues.' : 'Les compteurs ne signalent pas d’élément écarté par les limites de conservation. Cela ne permet pas de reconstituer des données supprimées volontairement ou perdues avant cet état.') + '</p>' + keyValues(retention) + '</section>' +
       '<section id="identite"><h2>Identité et périmètre</h2>' + keyValues(identity) + '<p>Les réponses sur l’identité utilisent cet état programmé. Les messages de l’utilisateur et de l’assistant sont distingués par leur rôle enregistré.</p>' + table(['Intention','Identifiant'],Object.keys(INTENT_LABELS).map(function (id) { return [INTENT_LABELS[id],id]; })) + '<p>Le petit modèle choisit parmi ces intentions. Les règles contrôlent les commandes de mémoire ; un texte non pris en charge peut être refusé.</p></section>' +
       '<section id="conversation"><h2>Conversation intégrale conservée</h2>' + (transcript || '<p class="empty">Aucun message conservé.</p>') + '</section>' +
+      '<section id="documents"><h2>Documents et textes extraits</h2><p>' + counts.documents + ' document(s), ' + counts.documentOriginalBytes + ' octets originaux, ' + counts.documentPages + ' pages ou segments conservés, ' + counts.documentCharacters + ' caractères extraits. Les citations et les limites de lecture restent dans les réponses et leurs explications. Les fichiers d’origine figurent dans l’archive et dans la sauvegarde restaurable.</p><p>Le texte d’un document est un contenu à examiner : il ne constitue pas une consigne exécutée par POI et n’entraîne pas automatiquement son classifieur.</p>' + (arr(state.documents).map(documentReport).join('') || '<p class="empty">Aucun document joint conservé.</p>') + '</section>' +
       '<section id="memoire"><h2>Mémoire des faits</h2><p>Les valeurs ci-dessous sont enregistrées comme déclarations de l’utilisateur. Leur présence en mémoire ne signifie pas qu’elles ont été vérifiées ni qu’un poids du modèle a changé.</p>' + table(['Clé','Valeur','Auteur','Création','Modification','Identifiant'],arr(state.facts).map(function (fact) { return [fact.key,fact.value,fact.author,dateLabel(fact.createdAt),dateLabel(fact.updatedAt),fact.id]; })) + '</section>' +
       '<section id="exemples"><h2>Exemples d’apprentissage actuels</h2><p>Le jeu actuel peut différer du jeu employé lors d’un entraînement précédent. Les instantanés enregistrés se trouvent dans la section Apprentissages.</p>' + table(['Formulation','Intention','Origine','Identifiant','Création'],arr(state.examples).map(function (example) { return [example.text,label(INTENT_LABELS,example.intent),example.origin,example.id,valueOr(example.createdAt,'Non renseignée')]; })) + '</section>' +
       '<section id="apprentissage"><h2>Historique des apprentissages</h2><p>Les pertes et exactitudes d’entraînement décrivent l’ajustement aux exemples utilisés ; l’exactitude d’entraînement mesure la première catégorie prédite, avant les seuils de refus. Les évaluations avant/après portent sur le jeu de contrôle fourni et comptent les refus comme des réponses incorrectes. Les nombres absents restent non mesurés.</p>' + (trainings || '<p class="empty">Aucun entraînement conservé. Le modèle peut encore être non entraîné.</p>') + '</section>' +
@@ -214,7 +250,7 @@
       '<section id="evaluation"><h2>Évaluation disponible au moment de l’export</h2>' + (context.evaluation ? '<p>Date de la mesure : ' + escapeHTML(dateLabel(context.evaluationAt || context.evaluation.evaluatedAt)) + ' · version évaluée : ' + escapeHTML(own(context,'evaluationModelVersion') ? (context.evaluationModelVersion === null ? 'modèle non entraîné' : context.evaluationModelVersion) : valueOr(context.evaluation.modelVersion,'Non renseignée')) + '.</p>' : '') + evaluationHTML(context.evaluation) + '<p>Ces résultats ne sont pas recalculés par l’exporteur. Ils sont ceux fournis par l’application ; vérifiez leur date et leur correspondance avec la version courante dans le contexte.</p></section>' +
       '<section id="journal"><h2>Journal intégral des opérations conservées</h2>' + table(['Date','Type','Auteur','Détail','Message lié','Identifiant'],arr(state.events).map(function (event) { return [dateLabel(event.createdAt),event.type,event.author,typeof event.detail === 'object' ? json(event.detail) : event.detail,valueOr(event.messageId,''),event.id]; })) + '</section>' +
       '<section id="diagnostics"><h2>Contrôles disponibles</h2>' + diagnosticsHTML + '<p>Ces contrôles portent sur le périmètre indiqué. Ils ne remplacent pas l’essai sur votre propre iPhone et n’attestent pas une compréhension générale du français.</p></section>' +
-      '<section id="contexte"><h2>Contexte technique fourni</h2><p>Le navigateur, la langue et les états de stockage ou de cache sont inclus uniquement lorsqu’ils ont été fournis. Un statut réseau ne prouve pas, à lui seul, que l’application fonctionne hors ligne.</p>' + keyValues(context) + '<h3>État complet exact</h3>' + details('Afficher toutes les données de l’état', '<pre>' + pretty(state) + '</pre>') + '</section>' +
+      '<section id="contexte"><h2>Contexte technique fourni</h2><p>Le navigateur, la langue et les états de stockage ou de cache sont inclus uniquement lorsqu’ils ont été fournis. Un statut réseau ne prouve pas, à lui seul, que l’application fonctionne hors ligne.</p>' + keyValues(context) + '<h3>État complet exact</h3><p>La sauvegarde JSON contient l’état restaurable exact, fichiers originaux inclus en base64. Pour garder ce rapport lisible, seules ces données binaires sont retirées de la vue ci-dessous ; les textes extraits et métadonnées y restent présents.</p>' + details('Afficher les données lisibles de l’état', '<pre>' + pretty(readableState) + '</pre>') + '</section>' +
       '<section id="limites"><h2>Interprétation et limites</h2><ul>' + LIMITATIONS.map(function (limit) { return '<li>' + escapeHTML(limit) + '</li>'; }).join('') + '</ul><p>La sauvegarde restaurable se nomme <code>sauvegarde-poi.json</code>. Ouvrir ce rapport n’effectue aucune restauration et n’exécute aucun entraînement.</p></section>' +
       '<footer>POI — export local détaillé · ' + escapeHTML(context.createdAt) + '<br>Rapport autonome, sans script, police distante ni ressource externe.</footer>';
     return '<!DOCTYPE html>\n<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:"><title>POI — Carnet d’apprentissage — ' + escapeHTML(context.createdAt.slice(0,10)) + '</title><style>' +
@@ -227,13 +263,16 @@
     var core = getCore();
     var canonical = core && typeof core.exportState === 'function' ? core.exportState(state) : json(state);
     if (typeof canonical !== 'string') throw new Error('La sauvegarde ne peut pas être produite.');
+    // Every representation uses the same validated state, including trimmed
+    // legacy strings, so CSV, report and restoration cannot diverge.
+    state = JSON.parse(canonical);
     var files = [];
     function add(name, role, content) { files.push({name:name,role:role,content:content}); }
     add('sauvegarde-poi.json','Sauvegarde complète et restaurable',canonical);
     add('rapport-poi-complet.html','Rapport lisible, autonome et imprimable',generateReport(state,context));
     add('conversation.csv','Tous les messages conservés et leurs métadonnées',csv(
-      ['ordre','id','date_utc','role','nom_auteur_lors_du_message','version_modele','texte','source','intention','score','explication','enregistrement_complet_json'],
-      arr(state.messages).map(function (m,i) { return [i+1,m.id,m.createdAt,m.role,valueOr(m.speakerName,m.role === 'user' ? 'Utilisateur' : 'Assistant'),m.modelVersion,m.text,m.source,m.intent,m.score,m.explanation,JSON.stringify(m)]; })
+      ['ordre','id','date_utc','role','nom_auteur_lors_du_message','version_modele','texte','source','intention','score','explication','documents_ids_json','enregistrement_complet_json'],
+      arr(state.messages).map(function (m,i) { return [i+1,m.id,m.createdAt,m.role,valueOr(m.speakerName,m.role === 'user' ? 'Utilisateur' : 'Assistant'),m.modelVersion,m.text,m.source,m.intent,m.score,m.explanation,arr(m.documentIds),JSON.stringify(m)]; })
     ));
     add('memoire.csv','Faits mémorisés, auteurs et dates',csv(
       ['id','cle','valeur','auteur','creation_utc','modification_utc','enregistrement_complet_json'],
@@ -243,6 +282,25 @@
       ['id','texte','intention','libelle_intention','origine','creation_utc','enregistrement_complet_json'],
       arr(state.examples).map(function (e) { return [e.id,e.text,e.intent,label(INTENT_LABELS,e.intent),e.origin,e.createdAt,JSON.stringify(e)]; })
     ));
+    add('documents.csv','Inventaire des documents, provenance et couverture de lecture',csv(
+      ['id','nom','type_mime','format','taille_original_octets','ajout_utc','sha256_enregistre','methode_extraction','pages_totales','pages_traitees','lecture_partielle','avertissements_json','original_dans_archive','texte_dans_archive'],
+      arr(state.documents).map(function (doc,index) { var ex=doc.extraction||{}, paths=documentPaths(doc,index); return [doc.id,doc.name,doc.mime,doc.kind,doc.size,doc.addedAt,doc.sha256,ex.method,ex.totalPages,ex.processedPages,ex.truncated,ex.warnings,paths.original,paths.extracted]; })
+    ));
+    var documentPages = [];
+    arr(state.documents).forEach(function (doc,index) {
+      var paths = documentPaths(doc,index);
+      add(paths.original,'Fichier original joint, conservé octet pour octet',originalBytes(doc));
+      add(paths.extracted,'Texte extrait complet, séparé par page ou segment',[
+        'POI — TEXTE EXTRAIT', 'Document : ' + doc.name, 'Identifiant : ' + doc.id,
+        'Extraction : ' + json(doc.extraction), '',
+        arr(doc.pages).map(function (page) { return '=== ' + (doc.kind === 'pdf' ? 'PAGE ' : 'SEGMENT ') + page.number + ' ===\n' + page.text; }).join('\n\n')
+      ].join('\n'));
+      arr(doc.pages).forEach(function (page) { documentPages.push([doc.id,doc.name,doc.kind === 'pdf' ? 'page' : 'segment',page.number,page.text.length,page.text]); });
+    });
+    add('pages-documents.csv','Texte complet extrait, page par page ou segment par segment',csv(
+      ['document_id','nom_document','type_reference','numero','nombre_caracteres','texte_extrait'],documentPages
+    ));
+    add('documents.json','Métadonnées et textes extraits exacts ; originaux dans la sauvegarde et les fichiers joints',json(arr(state.documents).map(function (doc,index) { return {document:documentMetadata(doc),files:documentPaths(doc,index)}; })));
     add('entrainements.csv','Historique des entraînements et décisions',csv(
       ['id','date_utc','statut','version_modele','raison','epochs','nombre_exemples','perte_avant','perte_apres','exactitude_entrainement_avant','exactitude_entrainement_apres','duree_ms','exactitude_evaluation_avant','exactitude_evaluation_apres','configuration_json','exemples_utilises_json','mesures_completes_json','enregistrement_complet_json'],
       arr(state.trainingRuns).map(function (r) { var m=r.metrics||{}; return [r.id,r.createdAt,r.status,r.modelVersion,r.reason,m.epochs,m.examples,m.lossBefore,m.lossAfter,m.accuracyBefore,m.accuracyAfter,m.durationMs,r.evaluationBefore&&r.evaluationBefore.accuracy,r.evaluationAfter&&r.evaluationAfter.accuracy,r.config,r.examplesSnapshot,m,JSON.stringify(r)]; })
@@ -278,6 +336,7 @@
       'Mémoire : les commandes prises en charge enregistrent ou rappellent des paires clé/valeur déclarées par l’utilisateur. Elles ne vérifient pas les faits.',
       'Commandes de mémoire : « Retiens : couleur préférée = bleu » ; « Que sais-tu sur couleur préférée ? ». Les variantes acceptées dépendent des règles de cette version.',
       'Apprentissage : le classifieur softmax ajuste des poids et biais à partir d’exemples étiquetés. Le vocabulaire, les paramètres, la configuration et les seuils effectifs figurent dans modeles.json.',
+      'Documents : extraction locale du texte, recherche par mots et sélection automatique de passages cités. Une pièce jointe ne modifie pas les paramètres du classifieur. Une page non lue ou un résultat OCR incertain ne doit pas être interprété comme une lecture exhaustive.',
       'Réponses : une intention reconnue est traitée par les fonctions programmées ; la formulation de la réponse est préparée. Une intention incertaine peut être refusée.',
       'Score : le score n’est pas une preuve de vérité ni de compréhension. Le système possède des seuils de score, de marge et de couverture, exportés avec le modèle.',
       'Évaluation : les résultats fournis sont enregistrés sans exécuter de nouveau test lors de l’export. Les entraînements et leurs jeux d’exemples sont conservés lorsqu’un instantané existe.',
@@ -294,6 +353,7 @@
       '6. Les dates enregistrées sont conservées en UTC ISO 8601. Le rapport affiche aussi les dates dans le fuseau Europe/Paris.',
       '7. Le manifeste donne l’inventaire, les compteurs, la configuration et les empreintes CRC32 des autres fichiers. CRC32 détecte des erreurs de transfert ; ce n’est pas une signature cryptographique ni une preuve d’authenticité.',
       '8. Le rapport ne lance ni entraînement ni test supplémentaire et n’invente aucune mesure. Les résultats absents sont indiqués non fournis.',
+      '9. Les originaux des pièces jointes sont dans documents/originaux/ et les textes extraits dans documents/textes/. La sauvegarde JSON les restaure aussi : il n’est pas nécessaire de joindre à nouveau les fichiers. documents.json, documents.csv et pages-documents.csv décrivent les méthodes, les pages lues, les limites et les références.',
       '', 'CONFIDENTIALITÉ',
       'Cette archive n’est pas chiffrée. Elle peut contenir des données personnelles ou confidentielles. Partagez-la uniquement après vérification.',
       '', 'CONSERVATION',
@@ -307,11 +367,13 @@
       'journal-evenements.csv : opérations observables conservées.',
       'parametres-modele.csv, vocabulaire-modele.csv, modeles.json : poids, biais, caractéristiques et configurations.',
       'contexte-export.json : environnement et diagnostics fournis au moment de l’export.',
+      'documents.json, documents.csv, pages-documents.csv : inventaire, extraction complète et références.',
+      'documents/originaux/ et documents/textes/ : fichiers joints et texte extrait sans suppression volontaire.',
       'regles-et-methodologie.txt : explication des mécanismes et limites.',
       'manifeste.json : inventaire et informations de vérification.', ''
     ].join('\n'));
     var manifest = {
-      format:'poi-detailed-export', formatVersion:1, generator:'POIExport', exporterVersion:VERSION,
+      format:'poi-detailed-export', formatVersion:2, generator:'POIExport', exporterVersion:VERSION,
       appVersion:context.appVersion || null, coreVersion:context.coreVersion || (core && core.VERSION) || null, stateSchemaVersion:valueOr(state.schemaVersion,null),
       createdAt:context.createdAt, timeZoneForReport:'Europe/Paris', restorableFile:'sauvegarde-poi.json',
       encoding:'UTF-8', csv:{delimiter:';',bom:true,quote:'"',formulaProtection:'Apostrophe initiale sur cellules textuelles à risque ; contenu exact dans JSON.'},
@@ -320,7 +382,7 @@
       measurements:{selfTestsProvided:!!context.selfTests,evaluationProvided:!!context.evaluation,evaluationAt:context.evaluationAt || null,evaluationModelVersion:valueOr(context.evaluationModelVersion,null),testsRunByExporter:false},
       integrity:{algorithm:'CRC32',cryptographic:false,scope:'Les empreintes ci-dessous couvrent les autres fichiers. Le manifeste lui-même possède un CRC dans les en-têtes ZIP.'},
       privacy:{encrypted:false,containsPersonalData:true,networkRequestsByExporter:0}, limitations:LIMITATIONS,
-      files:files.map(function (file) { var bytes=encoder.encode(file.content); return {name:file.name,role:file.role,sizeBytes:bytes.length,crc32:crc32(bytes).toString(16).padStart(8,'0')}; }).concat([{name:'manifeste.json',role:'Inventaire et métadonnées de l’export'}])
+      files:files.map(function (file) { var bytes=fileBytes(file.content); return {name:file.name,role:file.role,sizeBytes:bytes.length,crc32:crc32(bytes).toString(16).padStart(8,'0')}; }).concat([{name:'manifeste.json',role:'Inventaire et métadonnées de l’export'}])
     };
     add('manifeste.json','Inventaire et métadonnées de l’export',json(manifest));
     return files;
@@ -377,7 +439,7 @@
     var context=getContext(rawContext), files=createFiles(state,context);
     var bytes=createZIP(files,context.createdAt);
     var timestamp=context.createdAt.replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
-    return {filename:'poi-export-complet-'+timestamp+'.zip',bytes:bytes,files:files.map(function (file) { return {name:file.name,size:encoder.encode(file.content).length}; }),counts:countsFor(state),createdAt:context.createdAt};
+    return {filename:'poi-export-complet-'+timestamp+'.zip',bytes:bytes,files:files.map(function (file) { return {name:file.name,size:fileBytes(file.content).length}; }),counts:countsFor(state),createdAt:context.createdAt};
   }
   return {VERSION:VERSION,produce:produce,generateReport:generateReport,createFiles:createFiles,createZIP:createZIP,crc32:crc32};
 });
