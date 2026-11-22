@@ -1,11 +1,18 @@
-/* POI 0.2.0 — offline shell. Personal files and conversations never enter this cache. */
+/* POI 0.3.0 — offline shell. Personal files and conversations never enter this cache. */
 'use strict';
 
-const VERSION = 'poi-v1.1.2';
+const VERSION = 'poi-v1.3.2';
 const BASE = new URL('./', self.registration.scope);
 const PREFIX = 'poi:' + encodeURIComponent(BASE.pathname) + ':';
 const META_CACHE = PREFIX + 'metadata';
-const OPTIONAL_CACHE = PREFIX + VERSION + ':document-modules';
+// Vendor files are identical to 0.2.0. Keep their existing cache on upgrade;
+// change this revision only when the shipped document dependencies change.
+const DOCUMENT_MODULE_REVISION = 'poi-v1.1.2';
+const OPTIONAL_CACHE = PREFIX + DOCUMENT_MODULE_REVISION + ':document-modules';
+// The optional generator has an independent revision. Model weights are kept
+// by Wllama in OPFS and are never intercepted or downloaded by this worker.
+const GENERATION_RUNTIME_REVISION = 'wllama-v2.3.7';
+const GENERATION_RUNTIME_CACHE = PREFIX + GENERATION_RUNTIME_REVISION + ':generation-runtime';
 const POINTER = new URL('__poi_shell_' + VERSION, BASE).href;
 const INDEX_URL = new URL('index.html', BASE).href;
 const ASSETS = [
@@ -13,6 +20,8 @@ const ASSETS = [
   ['styles.css', 'css'],
   ['app.js', 'js'],
   ['documents.js', 'js'],
+  ['generation-context.js', 'js'],
+  ['generator.js', 'js'],
   ['engine.js', 'js'],
   ['exporter.js', 'js'],
   ['manifest.webmanifest', 'manifest'],
@@ -42,6 +51,11 @@ const OPTIONAL_ASSETS = DOCUMENT_PATHS.map(path => ({path,
   kind:/\.(?:m?js)$/.test(path) ? 'js' : /\.(?:txt|md)$/.test(path) ? 'text' : /\.json$/.test(path) ? 'json' : 'binary',
   url:new URL(path, BASE).href}));
 const OPTIONAL_BY_URL = new Map(OPTIONAL_ASSETS.map(asset => [asset.url, asset]));
+const GENERATION_RUNTIME_ASSETS = [
+  {path:'vendor/wllama/index.js', kind:'js'},
+  {path:'vendor/wllama/wllama.wasm', kind:'binary'}
+].map(asset => ({...asset, url:new URL(asset.path, BASE).href}));
+const GENERATION_RUNTIME_BY_URL = new Map(GENERATION_RUNTIME_ASSETS.map(asset => [asset.url, asset]));
 const HTML_CANONICAL = new Map([
   [INDEX_URL, BASE.href],
   [new URL('guide.html', BASE).href, new URL('guide', BASE).href]
@@ -171,7 +185,8 @@ async function offlineStatus() {
   return {
     type: 'OFFLINE_STATUS', version: VERSION,
     complete: missing.length === 0, shellAvailable, missing,
-    documentModules: await documentModuleStatus()
+    documentModules: await documentModuleStatus(),
+    generationRuntime: await generationRuntimeStatus()
   };
 }
 
@@ -182,6 +197,15 @@ async function documentModuleStatus() {
   const count = cached.filter(Boolean).length;
   return {cachedFiles:count,totalFiles:OPTIONAL_ASSETS.length,complete:count === OPTIONAL_ASSETS.length,
     note:'Modules téléchargés à la demande. Les textes déjà extraits restent dans votre sauvegarde locale.'};
+}
+
+async function generationRuntimeStatus() {
+  const names = await caches.keys();
+  const cache = names.includes(GENERATION_RUNTIME_CACHE) ? await caches.open(GENERATION_RUNTIME_CACHE) : null;
+  const cached = cache ? await Promise.all(GENERATION_RUNTIME_ASSETS.map(asset => cache.match(asset.url))) : [];
+  const count = cached.filter(Boolean).length;
+  return {revision:GENERATION_RUNTIME_REVISION,cachedFiles:count,totalFiles:GENERATION_RUNTIME_ASSETS.length,complete:count === GENERATION_RUNTIME_ASSETS.length,
+    modelWeightsIncluded:false,note:'Moteur téléchargé lors de sa préparation. Les poids du modèle sont gérés séparément dans le stockage local OPFS.'};
 }
 
 self.addEventListener('install', event => {
@@ -218,7 +242,7 @@ self.addEventListener('activate', event => {
     if (keep) {
       const names = await caches.keys();
       await Promise.all(names.filter(name => name.startsWith(PREFIX) &&
-        name !== META_CACHE && name !== keep && name !== OPTIONAL_CACHE).map(name => caches.delete(name)));
+        name !== META_CACHE && name !== keep && name !== OPTIONAL_CACHE && name !== GENERATION_RUNTIME_CACHE).map(name => caches.delete(name)));
     }
     await self.clients.claim();
   })());
@@ -270,8 +294,8 @@ async function assetResponse(request, asset) {
   return response;
 }
 
-async function documentAssetResponse(request, asset) {
-  const cache = await caches.open(OPTIONAL_CACHE);
+async function documentAssetResponse(request, asset, cacheName = OPTIONAL_CACHE) {
+  const cache = await caches.open(cacheName);
   const saved = await cache.match(asset.url);
   if (saved) return saved;
   const response = await fetchValidated(request, asset, 30000);
@@ -297,6 +321,10 @@ self.addEventListener('fetch', event => {
   else {
     const optional = OPTIONAL_BY_URL.get(new URL(url.pathname, BASE.origin).href);
     if (optional) event.respondWith(documentAssetResponse(request, optional));
+    else {
+      const runtime = GENERATION_RUNTIME_BY_URL.get(new URL(url.pathname, BASE.origin).href);
+      if (runtime) event.respondWith(documentAssetResponse(request, runtime, GENERATION_RUNTIME_CACHE));
+    }
   }
 });
 

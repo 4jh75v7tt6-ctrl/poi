@@ -16,7 +16,7 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function (documentsProvider) {
   'use strict';
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.3.0';
   var DEFAULT_EPOCHS = 400, MAX_EPOCHS = 800;
   var LIMITS = Object.freeze({ message: 2000, assistantMessage: 16000, example: 500, examples: 400, facts: 100,
     messages: 2000, events: 5000, trainingRuns: 100, features: 384, importBytes: 25 * 1024 * 1024 });
@@ -192,6 +192,37 @@
     if (new Set(ids).size !== ids.length) fail('La sélection de documents contient un doublon.');
     return ids;
   }
+  function validateCitations(value, documentIds, documents) {
+    return list(value, 'Citations documentaires', 24).map(function (citation) {
+      keysOnly(citation, ['documentId', 'name', 'page', 'excerpt'], 'Citation');
+      var item = { documentId: textValue(citation.documentId, 'Document cité', 100, false),
+        name: textValue(citation.name, 'Nom du document cité', 180, false),
+        page: integer(citation.page, 'Page citée', 1, 1000000) };
+      textValue(citation.excerpt, 'Extrait cité', 1200, false);
+      // Keep the exact quote, including intentional leading/trailing whitespace.
+      item.excerpt = citation.excerpt;
+      if (!documentIds || documentIds.indexOf(item.documentId) < 0) fail('Une citation doit appartenir aux documents sélectionnés pour ce message.');
+      if (documents) {
+        var document = documents.filter(function (entry) { return entry.id === item.documentId; })[0];
+        var page = document && document.pages.filter(function (entry) { return entry.number === item.page; })[0];
+        if (!document || document.name !== item.name || !page || page.text.indexOf(item.excerpt) < 0) fail('La citation ne correspond pas au texte du document sélectionné.');
+      }
+      return item;
+    });
+  }
+  function validateGeneration(value) {
+    keysOnly(value, ['runtime', 'runtimeVersion', 'modelId', 'modelRevision', 'modelFile', 'modelSha256', 'local',
+      'inputTokens', 'outputTokens', 'contextCharacters', 'durationMs', 'finishReason', 'citationScope'], 'Provenance de génération');
+    if (value.runtime !== 'wllama' || value.local !== true || value.citationScope !== 'provided-context') fail('Provenance de génération locale invalide.');
+    if (!/^[a-f0-9]{40}$/.test(value.modelRevision) || !/^[a-f0-9]{64}$/.test(value.modelSha256)) fail('Révision ou empreinte du modèle génératif invalide.');
+    if (['stop', 'length'].indexOf(value.finishReason) < 0) fail('Fin de génération invalide.');
+    return { runtime: 'wllama', runtimeVersion: textValue(value.runtimeVersion, 'Version du moteur génératif', 40, false),
+      modelId: textValue(value.modelId, 'Modèle génératif', 180, false), modelRevision: value.modelRevision,
+      modelFile: textValue(value.modelFile, 'Fichier du modèle génératif', 180, false), modelSha256: value.modelSha256, local: true,
+      inputTokens: integer(value.inputTokens, 'Jetons du contexte', 1, 100000), outputTokens: integer(value.outputTokens, 'Jetons générés', 0, 16000),
+      contextCharacters: integer(value.contextCharacters, 'Caractères du contexte fourni', 0, 32000),
+      durationMs: finite(value.durationMs, 'Durée de génération', 0, 86400000), finishReason: value.finishReason, citationScope: 'provided-context' };
+  }
   function selectedDocuments(state, options) {
     if (options == null) return null;
     keysOnly(options, ['documentIds'], 'Options de conversation');
@@ -207,9 +238,9 @@
     var values = {
       identity: 'Je m’appelle ' + name + '.',
       role: 'Mon rôle est : ' + state.identity.role + '. Je suis un atelier pour observer des règles, une mémoire et un petit apprentissage local.',
-      capabilities: 'Je peux me présenter, distinguer les auteurs des messages, enregistrer et rappeler des faits que vous déclarez, et entraîner un petit classifieur de six intentions. Je peux aussi chercher des passages dans le texte extrait des documents que vous importez et sélectionnez. Je n’accède ni au Web, ni à vos autres applications, ni à vos fichiers sans import volontaire. Mes réponses couvrent un domaine limité.',
+      capabilities: 'Je peux répondre à des questions simples à partir des faits que vous avez enregistrés et des documents que vous importez puis sélectionnez. Je peux y retrouver une information ou une définition explicitement présente, proposer un résumé par extraits et des mesures lexicales, et citer les passages utilisés. Le générateur local optionnel, lorsqu’il est préparé, peut rédiger une réponse à partir du contexte fourni ; ses affirmations restent à vérifier. Je peux aussi me présenter, distinguer les auteurs des messages, mémoriser vos déclarations explicites et entraîner un petit classifieur de six intentions. Je n’accède ni au Web pour répondre, ni à vos autres applications, ni à vos fichiers sans import volontaire.',
       remember: 'Pour enregistrer un fait, écrivez « Retiens : couleur préférée = bleu ». Vous pouvez aussi écrire « Retiens que ma couleur préférée est bleu ». Je mémorise cette déclaration sans en vérifier la vérité.',
-      recall: 'Pour retrouver un fait, écrivez « Que sais-tu sur couleur préférée ? ». Le nom du fait doit correspondre à la clé enregistrée.',
+      recall: 'Vous pouvez demander « Quelle est ma couleur préférée ? », « Que sais-tu sur moi ? » ou « Que sais-tu sur [clé] ? ». Je réponds à partir de vos déclarations enregistrées et je demande une précision si plusieurs faits correspondent.',
       greeting: 'Bonjour' + (state.identity.userName ? ' ' + state.identity.userName : '') + ' ! Je suis ' + name + '. Que souhaitez-vous essayer dans cet atelier ?'
     };
     return answer(values[intent], source, intent, score, source === 'model'
@@ -220,12 +251,117 @@
     var match = text.match(/^\s*(?:retiens|mémorise|memorise)\s*:\s*([^=\n]{1,80})\s*=\s*([^\n]{1,500})\s*$/i);
     if (match) return { key: match[1].trim(), value: match[2].trim() };
     match = text.match(/^\s*retiens\s+que\s+ma\s+([^\n=.!?]{1,80}?)\s+est\s+([^\n]{1,500})\s*$/i);
-    if (match) return { key: match[1].trim(), value: match[2].trim().replace(/\.$/, '') };
+    if (match && !/[?？]/.test(text)) return { key: match[1].trim(), value: match[2].trim().replace(/\.$/, '') };
     return null;
   }
   function parseRecallCommand(text) {
     var match = text.match(/^\s*que\s+sais[-\s]tu\s+sur\s+(.{1,85}?)\s*\?*\s*$/i);
     return match ? match[1].trim().replace(/[?\s]+$/, '') : null;
+  }
+  // Deliberately limited aliases: remove grammatical wrappers, never another
+  // person's name or a meaningful qualifier such as "voiture" or "chien".
+  function memoryKey(value) {
+    var words = normalized(value).replace(/^(?:ma|mon|mes|le|la|les|une?|l) /, '').replace(/ (?:de|a) moi$/, '').split(' ');
+    var aliases = { couleurs: 'couleur', preferee: 'prefere', preferees: 'prefere', preferes: 'prefere',
+      favorite: 'prefere', favorites: 'prefere', favori: 'prefere', favoris: 'prefere',
+      villes: 'ville', adresses: 'adresse', noms: 'nom', prenoms: 'prenom',
+      professions: 'metier', profession: 'metier', metiers: 'metier', domiciles: 'domicile',
+      residences: 'residence', loisirs: 'loisir', animaux: 'animal', livres: 'livre' };
+    return words.filter(function (word) { return word && !/^(?:de|du|des|le|la|les|l|d)$/.test(word); })
+      .map(function (word) { return aliases[word] || word; }).join(' ');
+  }
+  function documentSubject(simple) {
+    return /\b(?:dans|selon|d apres) (?:le |la |les |ce |cet |cette |ces |mon |ma |mes )?(?:document|livre|roman|texte|ouvrage|fichier|pdf|chapitre|passage|piece jointe)\b/.test(simple) ||
+      /\b(?:du|de ce|de cet|de cette|de la|des) (?:document|livre|roman|texte|ouvrage|fichier|pdf|chapitre|passage|piece jointe)\b/.test(simple) ||
+      /^que sais tu sur (?:le |la |les |ce |cet |cette )?(?:document|livre|roman|texte|ouvrage|fichier|pdf)\b/.test(simple);
+  }
+  function personalRequest(simple, followUp) {
+    if (documentSubject(simple)) return null;
+    if (/^(?:que sais tu sur moi|qu as tu (?:retenu|memorise|enregistre) (?:de|sur) moi|que sais tu de moi)$/.test(simple)) return { kind: 'summary' };
+    if (/^(?:(?:est ce que )?tu sais |sais tu )?comment (?:est ce que )?je m appelle$/.test(simple) || /^(?:quel est mon nom|quel est mon prenom|mon nom|mon prenom)$/.test(simple)) return { kind: 'name', key: 'nom' };
+    if (/^(?:ou (?:est ce que )?(?:j habite|je vis)|(?:sais tu|tu sais|tu te souviens|te souviens tu|peux tu me rappeler) ou (?:j habite|je vis))$/.test(simple)) return { kind: 'residence', key: 'lieu de résidence' };
+    var match = simple.match(/^(?:quels?|quelles?) (?:est|sont) (?:ma|mon|mes) (.+)$/) ||
+      simple.match(/^(?:(?:est ce que )?tu te souviens de|te souviens tu de|rappelle(?: moi)?|(?:peux tu )?(?:me )?rappeler|(?:peux tu )?me redire) (?:ma|mon|mes) (.+)$/) ||
+      simple.match(/^que sais tu sur (?:ma|mon|mes) (.+)$/) || simple.match(/^et (?:ma|mon|mes) (.+)$/);
+    if (match && match[1].length <= 85) return { kind: /^(?:nom|prenom|nom complet)$/.test(memoryKey(match[1])) ? 'name' : 'key', key: match[1], personal: true };
+    if (/^quelle (?:est la )?couleur (?:est ce que je prefere|je prefere|prefere je)$/.test(simple)) return { kind: 'key', key: 'couleur préférée', personal: true };
+    if (followUp) {
+      match = simple.match(/^et (?:le|la|les|l) (.+)$/);
+      if (match && match[1].length <= 85) return { kind: 'key', key: match[1], personal: true };
+    }
+    return null;
+  }
+  function memorySummary(state) {
+    var lines = [];
+    if (state.identity.userName) lines.push('Nom renseigné dans vos réglages : ' + state.identity.userName + '.');
+    if (state.facts.length) {
+      lines.push('Vous avez enregistré ' + state.facts.length + ' déclaration' + (state.facts.length > 1 ? 's' : '') + ' :');
+      state.facts.slice(0, 12).forEach(function (fact) { lines.push('• ' + fact.key + ' : ' + fact.value); });
+      if (state.facts.length > 12) lines.push('Les ' + (state.facts.length - 12) + ' autres déclarations sont disponibles dans Mémoire. Vous pouvez me demander une clé précise.');
+      lines.push('Source : vos déclarations explicites. Je conserve les clés telles que vous les avez données ; une information concernant une autre personne reste attribuée à cette personne.');
+    }
+    if (!lines.length) lines.push('Je n’ai encore aucune information personnelle enregistrée sur vous. Vous pouvez renseigner votre nom dans les réglages ou ajouter un fait dans Mémoire avec une clé et une valeur.');
+    return answer(lines.join('\n'), lines.length === 1 && !state.identity.userName && !state.facts.length ? 'unknown' : 'memory', 'recall', null,
+      'Inventaire du nom utilisateur renseigné et des faits explicitement déclarés par l’utilisateur ; aucune inférence à partir des documents ou des messages ordinaires.');
+  }
+  function memoryAnswer(state, request) {
+    if (request.kind === 'summary') return memorySummary(state);
+    var wanted = memoryKey(request.key), exact = [], partial = [], names = /^(?:nom|prenom|nom complet|identite)$/;
+    var residences = /^(?:ville|adresse|domicile|residence|lieu residence|ville residence|ville habitation|lieu vie|habitation)$/;
+    state.facts.forEach(function (fact) {
+      var candidate = memoryKey(fact.key);
+      if (candidate === wanted || (request.kind === 'name' && names.test(candidate)) || (request.kind === 'residence' && residences.test(candidate))) exact.push({ key: fact.key, value: fact.value, from: 'fact' });
+      else if (request.kind === 'key' && wanted && wanted.split(' ').every(function (word) { return candidate.split(' ').indexOf(word) >= 0; })) partial.push(fact);
+    });
+    if (request.kind === 'name' && state.identity.userName) exact.push({ key: 'nom dans les réglages', value: state.identity.userName, from: 'settings' });
+    // Two equivalent labels with different values require clarification; they
+    // must not be silently merged into a new personal fact.
+    var values = Array.from(new Set(exact.map(function (fact) { return fact.value; })));
+    if (exact.length && values.length === 1) {
+      var found = exact[0];
+      return answer((found.from === 'settings' ? 'Votre nom renseigné est ' + found.value + '. Source : vos réglages.' :
+        'Vous m’avez indiqué : « ' + found.key + ' = ' + found.value + ' ». Source : votre déclaration enregistrée.'),
+      'memory', 'recall', null, 'Rappel d’une information fournie par l’utilisateur. La valeur est conservée avec sa provenance et n’est pas une déduction du modèle.');
+    }
+    if (exact.length > 1 || partial.length) {
+      var candidates = exact.length ? exact : partial;
+      return answer('Pour « ' + request.key + ' », pouvez-vous préciser la clé souhaitée ? Je trouve ' + candidates.slice(0, 8).map(function (fact) { return '« ' + fact.key + ' »'; }).join(', ') +
+        (candidates.length > 8 ? ' et ' + (candidates.length - 8) + ' autres clés' : '') + '. Je préfère vous demander avant de choisir une valeur.',
+      'memory', 'recall', null, 'Plusieurs valeurs ou une clé seulement partielle correspondent. Aucune valeur ni attribution personnelle n’a été devinée.');
+    }
+    return answer('Je n’ai aucune information enregistrée pour « ' + request.key + ' ». ' + (request.kind === 'name' ? 'Vous pouvez renseigner votre nom dans les réglages ou dans Mémoire.' :
+      'Vous pouvez l’ajouter dans Mémoire, ou écrire « Retiens : ' + request.key + ' = [votre valeur] » en remplaçant les crochets.'),
+    'unknown', 'recall', null, 'Aucune déclaration correspondante n’est enregistrée ; les documents et les propos d’autres personnes ne servent pas à inventer une donnée personnelle.');
+  }
+  function learnedStateAnswer(state) {
+    var lines = [], active = state.model;
+    if (active) {
+      lines.push('Le modèle actif de classement (' + active.version + ') a été entraîné sur ' + active.examplesUsed + ' formulations pendant ' + active.config.epochs + ' itérations.');
+      lines.push('Il classe les demandes dans ces six catégories : ' + INTENTS.filter(function (intent) { return active.classes.indexOf(intent.id) >= 0; }).map(function (intent) { return intent.label; }).join(', ') + '.');
+      var runs = state.trainingRuns.filter(function (run) { return run.modelVersion === active.version || (run.parametersSnapshot && run.parametersSnapshot.version === active.version); });
+      var snapshot = runs.slice().reverse().filter(function (run) { return Array.isArray(run.examplesSnapshot); })[0];
+      if (snapshot) {
+        var examples = snapshot.examplesSnapshot.filter(function (example) { return example.origin === 'user'; });
+        if (!examples.length) examples = snapshot.examplesSnapshot;
+        lines.push('Exemples conservés de cet entraînement : ' + examples.slice(0, 3).map(function (example) {
+          return '« ' + example.text + ' » → ' + INTENTS.filter(function (intent) { return intent.id === example.intent; })[0].label;
+        }).join(' ; ') + '.');
+      } else lines.push('Le détail des formulations de cette version n’est pas conservé dans l’historique ; je ne peux pas le reconstituer à partir des seuls paramètres.');
+    } else lines.push('Aucun classifieur entraîné n’est actif. ' + state.examples.length + ' formulations sont préparées dans Apprendre ; elles ne constituent pas encore une version adoptée.');
+    if (active) lines.push('Le jeu actuellement préparé contient ' + state.examples.length + ' formulations ; il peut différer de celui du modèle actif. Une nouvelle séance ne change mes réponses qu’après adoption.');
+    lines.push('Séparément, la mémoire contient ' + state.facts.length + ' déclaration' + (state.facts.length > 1 ? 's' : '') + ' et ' + (state.documents || []).length + ' document' + ((state.documents || []).length > 1 ? 's sont importés.' : ' est importé.'));
+    lines.push('Mémoriser un fait ou lire un document ne réentraîne pas ce modèle : les faits sont rappelés depuis Mémoire et les réponses documentaires s’appuient sur les passages extraits.');
+    lines.push('Le générateur local optionnel est un modèle préentraîné distinct. Lui fournir vos données comme contexte ne modifie pas ses paramètres et ne constitue pas un nouvel entraînement.');
+    return answer(lines.join('\n'), 'rule', null, null, 'Description de l’état réellement présent : modèle actif, éventuel instantané d’entraînement, mémoire et pièces jointes. Aucun apprentissage général ou raisonnement intérieur n’est supposé.');
+  }
+  function unsupportedAnswer(state, text, score, reason) {
+    var simple = normalized(text), message;
+    if (/\b(?:meteo|temps fait|actualites?|aujourd hui|cours de la bourse)\b/.test(simple)) message = 'Je n’ai pas accès aux informations en direct pour répondre à cette demande. Si vous importez un bulletin ou un article, je peux en chercher les informations et citer son texte.';
+    else if (documentSubject(simple) || /\b(?:ce livre|ce document|ce roman|ce fichier)\b/.test(simple)) message = 'Pour répondre sur ce document, importez-le puis sélectionnez-le dans la conversation. Indiquez ensuite le passage, le personnage ou le sujet à rechercher ; je pourrai relier la réponse au texte disponible.';
+    else if (/^(?:qu est ce que|definis|explique(?: moi)?|pourquoi|comment fonctionne)\b/.test(simple)) message = 'Je n’ai pas de source enregistrée qui permette d’expliquer ce sujet. Vous pouvez importer un texte qui le traite et me demander une explication de ses passages. Pour mon propre fonctionnement, demandez mes capacités, ma mémoire ou ce que le modèle a appris.';
+    else if (/^(?:ecris|redige|compose|invente|cree)(?: moi)?\b/.test(simple)) message = 'Pour rédiger cette demande, préparez le générateur local optionnel dans la conversation. Vous pouvez lui fournir un document sélectionné ou des souvenirs enregistrés comme contexte. Les réponses rédigées restent à vérifier.';
+    else message = 'Pouvez-vous préciser l’information que vous cherchez ? Pour un souvenir, indiquez la clé enregistrée ; pour un texte, importez et sélectionnez le document puis posez une question sur son contenu. Je peux aussi expliquer mon identité, mes capacités et l’état de mon apprentissage.';
+    return answer(message, 'unknown', null, score, reason || 'La demande ne correspond pas aux réponses disponibles ; une précision ou une source est nécessaire, sans inventer de contenu.');
   }
   function processMessage(state, text, messageId, documentContext) {
     var simple = normalized(text), memory = parseMemoryCommand(text), key, existing, time;
@@ -241,14 +377,20 @@
       recordEvent(state, 'fact_' + (wasExisting ? 'updated' : 'saved'), 'user', 'Déclaration explicite : ' + existing.key + ' = ' + existing.value, messageId);
       return answer('J’ai enregistré votre déclaration : « ' + existing.key + ' = ' + existing.value + ' ». Elle reste attribuée à vous.', 'memory', 'remember', null, 'Mémoire d’un fait déclaré par l’utilisateur ; les paramètres du modèle ne changent pas.');
     }
+    var previousAssistant = state.messages[state.messages.length - 2];
+    var previousUser = state.messages[state.messages.length - 3];
+    var followsMemory = previousAssistant && previousAssistant.role === 'assistant' && previousAssistant.intent === 'recall' &&
+      previousUser && previousUser.role === 'user' && personalRequest(normalized(previousUser.text), false);
+    var request = personalRequest(simple, Boolean(followsMemory));
+    if (request) return memoryAnswer(state, request);
     var recall = parseRecallCommand(text);
-    if (recall !== null) {
-      key = normalized(recall);
-      existing = state.facts.filter(function (fact) { return normalized(fact.key) === key; })[0];
-      if (existing) return answer('Vous m’avez indiqué : « ' + existing.key + ' = ' + existing.value + ' ».', 'memory', 'recall', null, 'Lecture d’une déclaration conservée en mémoire, avec son auteur. Ce fait n’a pas été vérifié.');
-      return answer('Je n’ai aucune information enregistrée pour « ' + recall + ' ».', 'unknown', 'recall', null, 'La clé demandée est absente ; aucune valeur n’est inventée.');
+    if (recall !== null && !documentSubject(simple)) {
+      var recallKey = memoryKey(recall);
+      var hasKey = state.facts.some(function (fact) { return memoryKey(fact.key) === recallKey; });
+      if (!documentContext || hasKey) return memoryAnswer(state, { kind: 'key', key: recall });
     }
-    if (/\b(?:six|6) (?:intentions|categories|types de demandes)\b/.test(simple) ||
+    if (/^(?:qu as tu appris|qu est ce que tu as appris|que sais tu maintenant|ou en est ton apprentissage|quel est ton etat d apprentissage)$/.test(simple)) return learnedStateAnswer(state);
+    if ((!documentSubject(simple) && /\b(?:six|6) (?:intentions|categories|types de demandes)\b/.test(simple)) ||
         /^(?:quelles (?:sont tes|sont les|sont mes) intentions|quelles intentions (?:comprends tu|reconnais tu)|explique(?: moi)? les intentions)$/.test(simple)) {
       return answer('Une intention désigne le type de demande à reconnaître. Mes six catégories sont :\n' +
         INTENTS.map(function (item, index) { return (index + 1) + '. ' + item.label + ' : ' + item.description; }).join('\n') +
@@ -272,16 +414,21 @@
     if (/^(retiens|memorise|enregistre)( |$)/.test(simple)) return answerForIntent(state, 'remember', 'rule');
     if (/^(que sais tu|qu as tu retenu|consulte ta memoire|montre ta memoire)$/.test(simple)) return answerForIntent(state, 'recall', 'rule');
     if (documentContext) {
-      var documentReply = documentContext.module.answer(documentContext.documents, text, documentContext.ids);
-      if (documentReply) return answer(textValue(documentReply.text, 'Réponse documentaire', LIMITS.assistantMessage, false),
-        'document', null, null, textValue(documentReply.explanation || 'Réponse extraite des documents sélectionnés.', 'Explication documentaire', 4000, true));
+      var documentReply = documentContext.module.answer(documentContext.documents, text, documentContext.ids,
+        { messages: state.messages, identity: state.identity, facts: state.facts });
+      if (documentReply) {
+        var documentAnswer = answer(textValue(documentReply.text, 'Réponse documentaire', LIMITS.assistantMessage, false),
+          'document', null, null, textValue(documentReply.explanation || 'Réponse extraite des documents sélectionnés.', 'Explication documentaire', 4000, true));
+        if (documentReply.citations !== undefined) documentAnswer.citations = validateCitations(documentReply.citations, documentContext.ids, documentContext.documents);
+        return documentAnswer;
+      }
     }
     if (state.model) {
       var proposed = predict(state.model, text);
       if (proposed.accepted) return answerForIntent(state, proposed.intent, 'model', proposed.score);
-      return answer('Je ne sais pas interpréter cette demande de façon suffisamment fiable dans cet atelier. Essayez une commande proposée ou ajoutez un exemple avec sa catégorie.', 'unknown', null, proposed.score, proposed.reason + ' Le score compare seulement les six intentions du classifieur.');
+      return unsupportedAnswer(state, text, proposed.score, proposed.reason + ' Le score compare seulement les six intentions du classifieur.');
     }
-    return answer('Cette formulation n’est pas couverte par mes règles et aucun modèle n’a encore été entraîné. Essayez une commande proposée, ou ajoutez des exemples puis lancez un entraînement.', 'unknown', null, null, 'Ni règle applicable ni modèle entraîné ; aucune compréhension générale du français n’est revendiquée.');
+    return unsupportedAnswer(state, text, null);
   }
   function handleMessage(state, text, options) {
     text = textValue(text, 'Message', LIMITS.message, false);
@@ -297,10 +444,50 @@
       createdAt: now(), source: response.source, intent: response.intent, score: response.score, explanation: response.explanation,
       modelVersion: candidate.model && (response.source === 'model' || (response.source === 'unknown' && response.intent === null)) ? candidate.model.version : null };
     if (documentContext) assistantMessage.documentIds = documentContext.ids.slice();
+    if (response.citations !== undefined) assistantMessage.citations = validateCitations(response.citations, assistantMessage.documentIds);
     appendBounded(candidate, 'messages', assistantMessage, LIMITS.messages);
     recordEvent(candidate, 'response', 'assistant', 'Réponse issue de : ' + response.source + (response.intent ? ' ; intention : ' + response.intent : '') + '.', userMessage.id);
     touch(candidate);
     commitMutation(state, candidate, ['messages', 'facts']);
+    return response;
+  }
+  function previewMessage(state, text, options) {
+    text = textValue(text, 'Message', LIMITS.message, false);
+    var documentContext = selectedDocuments(state, options);
+    var candidate = mutationCandidate(state, { messages: state.messages.slice(), facts: state.facts.map(function (fact) { return Object.assign({}, fact); }) });
+    var userMessage = { id: id('preview'), role: 'user', text: text, createdAt: now() };
+    appendBounded(candidate, 'messages', userMessage, LIMITS.messages);
+    return processMessage(candidate, text, userMessage.id, documentContext);
+  }
+  function handleGeneratedMessage(state, text, result, options) {
+    text = textValue(text, 'Message', LIMITS.message, false);
+    keysOnly(result, ['text', 'generation', 'citations'], 'Réponse générée');
+    options = options || {};
+    keysOnly(options, ['documentIds', 'contextCitations'], 'Options de génération');
+    var documentContext = selectedDocuments(state, { documentIds: options.documentIds || [] });
+    var documentIds = documentContext ? documentContext.ids : [];
+    var provided = validateCitations(options.contextCitations || [], documentIds, documentContext ? documentContext.documents : []);
+    var citations = validateCitations(result.citations || [], documentIds, documentContext ? documentContext.documents : []);
+    citations.forEach(function (citation) {
+      if (!provided.some(function (source) { return source.documentId === citation.documentId && source.name === citation.name && source.page === citation.page && source.excerpt === citation.excerpt; })) fail('La génération ne peut citer qu’un passage réellement fourni dans son contexte.');
+    });
+    var generation = validateGeneration(result.generation);
+    var response = answer(textValue(result.text, 'Réponse générée', LIMITS.assistantMessage, false), 'generation', null, null,
+      'Réponse rédigée localement par ' + generation.modelId + ' (' + generation.modelFile + '), moteur ' + generation.runtime + ' ' + generation.runtimeVersion + '. ' +
+      'Les références présentent les passages fournis au modèle ; elles ne garantissent pas chaque affirmation. Cette réponse ne modifie ni vos souvenirs ni le classifieur à six intentions.');
+    response.citations = citations;
+    response.generation = generation;
+    var candidate = mutationCandidate(state, { messages: state.messages.slice() });
+    var userMessage = { id: id('message'), role: 'user', speakerName: state.identity.userName || 'Utilisateur', text: text, createdAt: now() };
+    var assistantMessage = { id: id('message'), role: 'assistant', speakerName: state.identity.name, text: response.text, createdAt: now(),
+      source: 'generation', intent: null, score: null, explanation: response.explanation, modelVersion: null, generation: Object.assign({}, generation),
+      citations: citations.map(function (citation) { return Object.assign({}, citation); }) };
+    if (documentContext) { userMessage.documentIds = documentIds.slice(); assistantMessage.documentIds = documentIds.slice(); }
+    appendBounded(candidate, 'messages', userMessage, LIMITS.messages);
+    appendBounded(candidate, 'messages', assistantMessage, LIMITS.messages);
+    recordEvent(candidate, 'response', 'assistant', 'Réponse générée localement : ' + generation.modelId + ' ; ' + generation.outputTokens + ' jetons ; ' + citations.length + ' passages fournis conservés.', userMessage.id);
+    touch(candidate);
+    commitMutation(state, candidate, 'messages');
     return response;
   }
 
@@ -381,6 +568,22 @@
     recordEvent(candidate, 'document_removed', 'user', 'Document retiré : ' + removed.name + '. Les messages déjà conservés restent dans l’historique.');
     commitMutation(state, candidate, 'documents');
     return true;
+  }
+  function refreshDocument(state, documentId, refreshedDoc) {
+    documentId = textValue(documentId, 'Identifiant de document', 100, false);
+    var documents = validateDocumentList(state.documents == null ? [] : state.documents);
+    var previous = documents.filter(function (document) { return document.id === documentId; })[0];
+    if (!previous) fail('Le document à relire est absent.');
+    plain(refreshedDoc, 'Document relu');
+    ['id', 'name', 'mime', 'size', 'kind', 'sha256', 'dataBase64'].forEach(function (field) {
+      if (refreshedDoc[field] !== previous[field]) fail('La relecture doit conserver le même original et ses métadonnées : ' + field + '.');
+    });
+    var refreshed = documentModule().validateDocuments([Object.assign({}, refreshedDoc, { addedAt: previous.addedAt })])[0];
+    var candidate = mutationCandidate(state, { documents: documents.map(function (document) { return document.id === documentId ? refreshed : document; }) });
+    recordEvent(candidate, 'document_refreshed', 'user', 'Document relu : ' + refreshed.name + ' ; ' + refreshed.extraction.processedPages +
+      ' pages ou segments traités ; ' + refreshed.pages.reduce(function (total, page) { return total + page.text.length; }, 0) + ' caractères extraits. Original et date d’ajout conservés.');
+    commitMutation(state, candidate, 'documents');
+    return refreshed;
   }
   function vocabularyFor(examples) {
     var counts = Object.create(null);
@@ -609,17 +812,26 @@
     output.model = validateModel(value.model);
     output.previousModel = validateModel(value.previousModel);
     output.messages = list(value.messages, 'Messages', LIMITS.messages).map(function (message) {
-      keysOnly(message, ['id', 'role', 'speakerName', 'text', 'createdAt', 'source', 'intent', 'score', 'explanation', 'modelVersion', 'documentIds'], 'Message');
+      keysOnly(message, ['id', 'role', 'speakerName', 'text', 'createdAt', 'source', 'intent', 'score', 'explanation', 'modelVersion', 'documentIds', 'citations', 'generation'], 'Message');
       if (message.role !== 'user' && message.role !== 'assistant') fail('Auteur du message invalide.');
       var item = { id: textValue(message.id, 'Identifiant du message', 100, false), role: message.role, text: textValue(message.text, 'Message', message.role === 'assistant' ? LIMITS.assistantMessage : LIMITS.message, false), createdAt: dateValue(message.createdAt, 'Date du message') };
       if (message.speakerName !== undefined) item.speakerName = textValue(message.speakerName, 'Nom au moment du message', 60, false);
       if (message.modelVersion !== undefined) item.modelVersion = message.modelVersion === null ? null : textValue(message.modelVersion, 'Version utilisée pour le message', 100, false);
       // Historical selections survive removal of the original attachments.
       if (message.documentIds !== undefined) item.documentIds = validateDocumentIds(message.documentIds);
-      if (message.source != null) { if (['rule', 'model', 'memory', 'unknown', 'document'].indexOf(message.source) < 0) fail('Source de réponse inconnue.'); item.source = message.source; }
+      if (message.source != null) { if (['rule', 'model', 'memory', 'unknown', 'document', 'generation'].indexOf(message.source) < 0) fail('Source de réponse inconnue.'); item.source = message.source; }
       if (message.intent !== undefined) item.intent = message.intent === null ? null : validIntent(message.intent);
       if (message.score !== undefined) item.score = message.score === null ? null : finite(message.score, 'Score de réponse', 0, 1);
       if (message.explanation !== undefined) item.explanation = textValue(message.explanation, 'Explication de réponse', 4000, true);
+      if (message.citations !== undefined) {
+        if (message.role !== 'assistant' || ['document', 'generation'].indexOf(message.source) < 0) fail('Seule une réponse documentaire ou générée peut conserver des citations.');
+        // Historical evidence remains readable after removal or re-extraction.
+        item.citations = validateCitations(message.citations, item.documentIds);
+      }
+      if (message.source === 'generation') {
+        if (message.role !== 'assistant' || message.modelVersion != null || message.score != null || message.intent != null) fail('Une réponse générée doit rester distincte du classifieur.');
+        item.generation = validateGeneration(message.generation);
+      } else if (message.generation !== undefined) fail('La provenance générative doit appartenir à une réponse générée.');
       return item;
     });
     ensureUnique(output.messages, 'id', 'Messages');
@@ -713,8 +925,9 @@
   }
 
   return Object.freeze({ VERSION: VERSION, LIMITS: LIMITS, INTENTS: INTENTS, SEED_EXAMPLES: SEED_EXAMPLES,
-    createState: createState, handleMessage: handleMessage, reply: handleMessage, referent: referent, train: train,
+    createState: createState, handleMessage: handleMessage, reply: handleMessage, previewMessage: previewMessage,
+    handleGeneratedMessage: handleGeneratedMessage, referent: referent, train: train,
     predict: predict, evaluate: evaluate, evaluateExamples: evaluateExamples, addExample: addExample, addExamples: addExamples,
-    addDocument: addDocument, removeDocument: removeDocument, exportState: exportState,
+    addDocument: addDocument, removeDocument: removeDocument, refreshDocument: refreshDocument, exportState: exportState,
     importState: importState, runSelfTests: runSelfTests, recordEvent: recordEvent, appendTrainingRun: appendTrainingRun });
 }));

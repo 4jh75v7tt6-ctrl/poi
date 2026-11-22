@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-11-21",
+  "upstream": {
+    "package": "@wllama/wllama",
+    "version": "2.3.7",
+    "repository": "https://github.com/ngxson/wllama",
+    "tag": "2.3.7",
+    "commit": "5e63e3b226a077b33dc7c608f1fe630f3d21f539",
+    "llamaCppCommit": "4abef75f2cf2eee75eb5083b30a94cf981587394",
+    "llamaCppVersion": "b7179-4abef75"
+  },
+  "artifacts": {
+    "index.js": {
+      "bytes": 258453,
+      "sha256": "89ddfd05e190ffbaeb97b965049f84259f797f45a1ea1d6270492aa0d93229f5",
+      "origin": "Local packaging of exact upstream TypeScript sources; not the npm byte-for-byte bundle.",
+      "externalModuleImports": 0,
+      "workerJavaScriptEmbedded": true,
+      "exports": [
+        "LoggerWithoutDebug",
+        "Model",
+        "ModelManager",
+        "ModelValidationStatus",
+        "POLYFILL_ETAG",
+        "Wllama",
+        "WllamaAbortError",
+        "WllamaError",
+        "isValidGgufFile"
+      ]
+    },
+    "wllama.wasm": {
+      "bytes": 2158740,
+      "sha256": "529c780d43cb57cb9ac7ef4c42e16463afb0b2dec4ecaae9a6df8179c435fd71",
+      "origin": "Unmodified upstream single-thread binary",
+      "gitBlobSha1": "b6067845201a85f9349b77359cf780dcec775d9a",
+      "upstreamPath": "src/single-thread/wllama.wasm",
+      "downloadUrl": "https://github.com/ngxson/wllama/raw/5e63e3b226a077b33dc7c608f1fe630f3d21f539/src%2Fsingle-thread%2Fwllama.wasm"
+    }
+  },
+  "build": {
+    "script": "build-from-sources.cjs",
+    "scriptSha256": "39af613ea80617db1c84a8b24d400bd43b9aa9933ad622c714aef2b8f0f12b89",
+    "node": "24.22.3",
+    "babelProvider": "Playwright 1.62.1 bundled Babel",
+    "steps": [
+      "Verify every input Git blob SHA-1 against the pinned upstream tree.",
+      "Erase TypeScript with node:module.stripTypeScriptTypes(mode=transform).",
+      "Transform ESM imports/exports to CommonJS using Playwright bundled Babel; remove generated inline source maps.",
+      "Wrap the complete nine-module graph in an internal loader preserving cached modules and cyclic references.",
+      "Expose the upstream public named exports from one standalone ESM entry."
+    ],
+    "minified": false,
+    "sourceMaps": false,
+    "runtimeDependencies": [],
+    "command": "node dist/vendor/wllama/build-from-sources.cjs /path/to/wllama-2.3.7",
+    "sourceFiles": {
+      "src/index.ts": {
+        "bytes": 135,
+        "gitBlobSha1": "dfea2b6853335cf5a25826b655a4c718f3129d2e",
+        "sha256": "a2298c0b707230443ba0757e4152e77ab272cf67f1476ba3c0185dbd9f6cafb2"
+      },
+      "src/wllama.ts": {
+        "bytes": 41403,
+        "gitBlobSha1": "5a72baaf221ff1170e6a8f9b6e7d89941226ad7c",
+        "sha256": "8ba3e126c61c2a9a61be17ba636d4860d7de7e9f8a009f60d3d59c92c77ca499"
+      },
+      "src/cache-manager.ts": {
+        "bytes": 11391,
+        "gitBlobSha1": "a2ecb7fab0569917d8a8513035d18ae1e1334eb7",
+        "sha256": "456155e2d24db5df88bb62d5cc30538ca501ea3676694ed8636e34d8fce64fa8"
+      },
+      "src/model-manager.ts": {
+        "bytes": 9581,
+        "gitBlobSha1": "507130ffd4f13982dbc889074ebaef12c0b2b601",
+        "sha256": "39db262ea179d88d1589395b055557a2afc57de30758a2a3532d2cf22f4f639f"
+      },
+      "src/utils.ts": {
+        "bytes": 7572,
+        "gitBlobSha1": "7a78c95150c5e7048cb51e0e1dc66345ab682ddc",
+        "sha256": "4497cebe43612b6cf27d2ca67e630badfeeca8e64ad85c2a33e270b951825996"
+      },
+      "src/worker.ts": {
+        "bytes": 7903,
+        "gitBlobSha1": "ecf81fd844d8d2734f7d1eda6c5c1bd54dcedd9e",
+        "sha256": "3b837ca263311ec0fc50c25271b30aa934385d653f5c183664fe7cac3a30b6fb"
+      },
+      "src/glue/glue.ts": {
+        "bytes": 7162,
+        "gitBlobSha1": "7791f7b0c61d1def8341698d0554986eaa33841b",
+        "sha256": "beebca7be2c9c96d308f39c2b98a74908ac170e7af106ab0c2a9ad12a5f2af3f"
+      },
+      "src/glue/messages.ts": {
+        "bytes": 28841,
+        "gitBlobSha1": "29f376d2470551dc279d0e7b2d2eb182122cfd8c",
+        "sha256": "da311f86366aa21867144378ec61d1c24c64e51d6530786931d733a8ce01c619"
+      },
+      "src/workers-code/generated.ts": {
+        "bytes": 182827,
+        "gitBlobSha1": "d1685382c74d2e376376f596d0b7ba11ef115ce0",
+        "sha256": "1590b59a6165f6bb692b8cb7043bd55c65520b253383ca2e3e3689bfa1112150"
+      }
+    },
+    "rebuildByteIdentical": true
+  },
+  "model": {
+    "repository": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+    "revision": "6dd44a1fb35d11b5d1b28902876ce3cc9e882d0e",
+    "filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "quantization": "Q4_K_M",
+    "bytes": 491400032,
+    "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+    "license": "Apache-2.0",
+    "bundledWithApplication": false,
+    "downloadUrl": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/6dd44a1fb35d11b5d1b28902876ce3cc9e882d0e/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "pointerUrl": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/raw/6dd44a1fb35d11b5d1b28902876ce3cc9e882d0e/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+  },
+  "browserRequirements": {
+    "runtime": "CPU WebAssembly in a dedicated worker",
+    "configuration": "single thread; no SharedArrayBuffer/COOP/COEP requirement for this selected execution mode",
+    "wasmFeatures": [
+      "SIMD128",
+      "legacy exception handling",
+      "32-bit linear memory"
+    ],
+    "JSPIRequired": false,
+    "MEMORY64Required": false,
+    "OPFSNeededForModelCache": true,
+    "safariFeatureBaseline": "Safari 16.4 or later is inferred from required feature support, not a device compatibility certification.",
+    "physicalIPhoneTested": false
+  },
+  "verification": {
+    "sourceGitHashesMatched": 9,
+    "dependencyGraphComplete": true,
+    "nodeEsmImportAndPublicApiConstruction": "passed on Node 24.22.3",
+    "wasmMagicAndGitHash": "passed",
+    "wasmValidateAndModuleCompilation": "passed on Node 24.22.3",
+    "modelInference": "Not exercised by this vendor packaging step.",
+    "iPhonePerformance": "Not measured."
+  },
+  "licenses": {
+    "LICENSE-wllama.txt": {
+      "license": "MIT",
+      "source": "https://github.com/ngxson/wllama/blob/5e63e3b226a077b33dc7c608f1fe630f3d21f539/LICENCE",
+      "bytes": 1072,
+      "sha256": "164c94eef320be0a33a433240afef7a37371394acb66134425c366af1caaa207"
+    },
+    "LICENSE-llama.cpp.txt": {
+      "license": "MIT",
+      "source": "https://github.com/ggml-org/llama.cpp/blob/4abef75f2cf2eee75eb5083b30a94cf981587394/LICENSE",
+      "bytes": 1079,
+      "sha256": "c4abbe18f2c6ae679ed7509131a313d25612755a342ca07ea1718a31880a4f87"
+    },
+    "LICENSE-Emscripten.txt": {
+      "license": "MIT OR NCSA (upstream dual-license text)",
+      "source": "https://github.com/emscripten-core/emscripten/blob/4.0.3/LICENSE",
+      "bytes": 5094,
+      "sha256": "1d678c6d3e6fca3245faaf72b66097b8df241172b38c8d9a16601e3a72b66386"
+    },
+    "LICENSE-wasm-feature-detect.txt": {
+      "license": "Apache-2.0",
+      "source": "https://github.com/GoogleChromeLabs/wasm-feature-detect/blob/main/LICENSE",
+      "upstreamGitBlobSha1": "12b597d3c138941bde65a6b1d20ffc5f5d87b7c2",
+      "bytes": 11342,
+      "sha256": "a1e4522979cd422b42d0b464072eb7d0d218651659f56bf09f8c147384e3f105"
+    },
+    "LICENSE-Babel.txt": {
+      "license": "MIT",
+      "source": "https://github.com/babel/babel/blob/main/LICENSE",
+      "bytes": 1107,
+      "sha256": "d020cba062170fea7181a4d2b814f1beb7a034c61ce6736dda2972fbaca433c1"
+    },
+    "LICENSE-Qwen2.5.txt": {
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/raw/main/LICENSE",
+      "note": "Full official license text; whitespace normalized from the retrieved text view.",
+      "bytes": 11290,
+      "sha256": "6295527d31141b4c05185b214a75f433c63a5a24c0b7f65bc91388ab0e01102f"
+    }
+  }
+}
