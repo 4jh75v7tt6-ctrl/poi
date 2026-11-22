@@ -1,10 +1,10 @@
 {
-  "description": "Ressources locales facultatives, chargées à la demande. Le cache noyau ne garantit pas leur présence hors ligne.",
+  "description": "Ressources locales facultatives des lecteurs et du moteur génératif, chargées à la demande. Le cache du socle ne garantit pas leur présence hors ligne. Les poids Qwen de 491 400 032 octets ne sont pas inclus dans ce manifeste ni dans le paquet : leur préparation initiale nécessite une action explicite.",
   "files": [
     {
       "path": "vendor/NOTICES.json",
-      "bytes": 1114,
-      "sha256": "65d954b217c692125e636883f5724f5bb9d39a91b3490606df9414166af28296",
+      "bytes": 3371,
+      "sha256": "9d2a0edb11c332bd9c42c66e211685aad71d09c5fc34fa1d6c7b97917c4c25cb",
       "group": "NOTICES.json"
     },
     {
@@ -156,6 +156,74 @@
       "bytes": 94519,
       "sha256": "6017eca5939cde1836e88e6d8cd27ae039246f206515ea4487bdfd0e3fb16e26",
       "group": "pdfjs"
+    },
+    {
+      "path": "vendor/wllama/LICENSE-Babel.txt",
+      "bytes": 1107,
+      "sha256": "d020cba062170fea7181a4d2b814f1beb7a034c61ce6736dda2972fbaca433c1",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/LICENSE-Emscripten.txt",
+      "bytes": 5094,
+      "sha256": "1d678c6d3e6fca3245faaf72b66097b8df241172b38c8d9a16601e3a72b66386",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/LICENSE-Qwen2.5.txt",
+      "bytes": 11290,
+      "sha256": "6295527d31141b4c05185b214a75f433c63a5a24c0b7f65bc91388ab0e01102f",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/LICENSE-llama.cpp.txt",
+      "bytes": 1079,
+      "sha256": "c4abbe18f2c6ae679ed7509131a313d25612755a342ca07ea1718a31880a4f87",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/LICENSE-wasm-feature-detect.txt",
+      "bytes": 11342,
+      "sha256": "a1e4522979cd422b42d0b464072eb7d0d218651659f56bf09f8c147384e3f105",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/LICENSE-wllama.txt",
+      "bytes": 1072,
+      "sha256": "164c94eef320be0a33a433240afef7a37371394acb66134425c366af1caaa207",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/PROVENANCE.json",
+      "bytes": 7725,
+      "sha256": "b7a42afc1d60612ee548c7c0b5ebe4c616ee17ee0275268488838f8fdc68e030",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/README.md",
+      "bytes": 2802,
+      "sha256": "cce2ec0c09f8672bf1e786de43685d3bc7c4d83dcb5d0993700646c5cd3baa3b",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/build-from-sources.cjs",
+      "bytes": 7024,
+      "sha256": "39af613ea80617db1c84a8b24d400bd43b9aa9933ad622c714aef2b8f0f12b89",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/index.js",
+      "bytes": 258453,
+      "sha256": "89ddfd05e190ffbaeb97b965049f84259f797f45a1ea1d6270492aa0d93229f5",
+      "group": "wllama"
+    },
+    {
+      "path": "vendor/wllama/wllama.wasm",
+      "bytes": 2158740,
+      "sha256": "529c780d43cb57cb9ac7ef4c42e16463afb0b2dec4ecaae9a6df8179c435fd71",
+      "group": "wllama"
     }
-  ]
+  ],
+  "network_policy": "Executable runtime assets and document readers are served from this application origin and run locally. Only an explicit Prepare model action may download missing public model weights from the pinned official Hugging Face URL, including its delivery redirects. Conversation and document contents are not sent with that download. Inference and OCR remain on the device: no remote inference, remote OCR, or paid AI API. The application shell, optional runtimes, and model weights must each already be cached for their corresponding offline functions.",
+  "model_weights_included": false
 }

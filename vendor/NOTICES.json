@@ -25,5 +25,39 @@
     "language": "French",
     "size_bytes": 1130365
   },
-  "network_policy": "All runtime URLs are relative to this application origin. No CDN, remote OCR or remote model API."
+  "@wllama/wllama": {
+    "version": "2.3.7",
+    "source": "https://github.com/ngxson/wllama",
+    "commit": "5e63e3b226a077b33dc7c608f1fe630f3d21f539",
+    "build": "Standalone ESM packaged locally from the exact nine pinned upstream TypeScript files; embedded worker code; unmodified upstream single-thread WASM. No TypeScript source files are included in dist.",
+    "license": "MIT",
+    "provenance": "vendor/wllama/PROVENANCE.json",
+    "files": [
+      {
+        "path": "vendor/wllama/index.js",
+        "size_bytes": 258453,
+        "sha256": "89ddfd05e190ffbaeb97b965049f84259f797f45a1ea1d6270492aa0d93229f5"
+      },
+      {
+        "path": "vendor/wllama/wllama.wasm",
+        "size_bytes": 2158740,
+        "sha256": "529c780d43cb57cb9ac7ef4c42e16463afb0b2dec4ecaae9a6df8179c435fd71"
+      }
+    ]
+  },
+  "Qwen/Qwen2.5-0.5B-Instruct-GGUF": {
+    "source": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+    "revision": "6dd44a1fb35d11b5d1b28902876ce3cc9e882d0e",
+    "filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "quantization": "Q4_K_M",
+    "size_bytes": 491400032,
+    "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+    "license": "Apache-2.0",
+    "download_url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/6dd44a1fb35d11b5d1b28902876ce3cc9e882d0e/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "bundled": false,
+    "cache": "OPFS on the device, separate from the application shell and runtime caches",
+    "acquisition": "Only the explicit Prepare model action may download missing model weights from the official pinned Hugging Face URL. Delivery redirects may be followed. A complete verified cached copy is reused locally.",
+    "inference": "On-device CPU inference through wllama; no remote inference endpoint."
+  },
+  "network_policy": "Executable runtime assets and document readers are served from this application origin and run locally. Only an explicit Prepare model action may download missing public model weights from the pinned official Hugging Face URL, including its delivery redirects. Conversation and document contents are not sent with that download. Inference and OCR remain on the device: no remote inference, remote OCR, or paid AI API. The application shell, optional runtimes, and model weights must each already be cached for their corresponding offline functions."
 }
