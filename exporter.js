@@ -11,13 +11,13 @@
   else root.POIExport = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (getCore) {
   'use strict';
-  var VERSION = '0.2.0';
+  var VERSION = '0.3.0';
   var encoder = new TextEncoder();
   var INTENT_LABELS = {
     identity: 'Identité', role: 'Rôle', capabilities: 'Capacités',
     remember: 'Mémorisation', recall: 'Rappel', greeting: 'Salutation'
   };
-  var SOURCE_LABELS = {rule: 'Règle programmée', model: 'Modèle appris', memory: 'Mémoire', document: 'Document joint', unknown: 'Demande non reconnue'};
+  var SOURCE_LABELS = {rule: 'Règle programmée', model: 'Classifieur appris', memory: 'Mémoire', document: 'Document joint', generation: 'Génération locale', unknown: 'Demande non reconnue'};
   var STATUS_LABELS = {evaluated: 'Évalué', adopted: 'Adopté', rejected: 'Refusé', rolled_back: 'Retour à la version précédente', candidate: 'Candidat'};
   var LIMITATIONS = [
     'Cet export décrit toutes les données présentes dans l’état au moment de sa création. Il ne reconstitue pas les données supprimées, les échanges absents ni les éléments écartés par les limites de conservation.',
@@ -26,7 +26,9 @@
     'Un score de classification n’est pas une probabilité que la réponse soit vraie. Les refus et les résultats inconnus doivent être conservés dans l’interprétation des mesures.',
     'Les mesures sur les exemples d’entraînement et sur le petit jeu d’évaluation ont des usages différents. Un résultat élevé sur ce jeu limité ne démontre pas une compréhension générale du français.',
     'Les évaluations utilisées pour choisir une version ne constituent plus un test final indépendant. Prévoir d’autres formulations pour une évaluation finale.',
-    'Les documents joints sont conservés avec leur fichier original, leur texte extrait et les limites de lecture. Une fiche de lecture est une sélection automatique de passages, pas une analyse générale ni une vérification des affirmations de l’ouvrage.',
+    'Les réponses de source « document » sélectionnent des phrases sources selon la question. Leurs résumés sont extractifs et leurs analyses fournissent des mesures lexicales. Le document original, le texte extrait, les limites de lecture et les citations disponibles sont conservés.',
+    'Les réponses de source « generation » sont rédigées localement par un modèle de langage préentraîné. Elles peuvent contenir des erreurs. Les citations associées désignent les passages fournis au modèle ; elles ne garantissent pas que chaque affirmation produite soit établie par ces passages. Une sélection de contexte ne représente pas le texte intégral du document.',
+    'Les poids du modèle génératif préentraîné sont soit conservés dans OPFS, soit lus depuis un fichier GGUF choisi pour la session, sans copie dans OPFS. Ils ne sont pas inclus dans la sauvegarde personnelle. La révision, le fichier et son empreinte SHA-256 permettent de récupérer le même modèle. Cela ne garantit pas une nouvelle réponse identique ; les paramètres d’échantillonnage et l’ensemble du contexte d’exécution ne sont pas nécessairement conservés.',
     'La reconnaissance de texte peut commettre des erreurs. Les références renvoient aux pages lues du PDF ; les autres formats utilisent des segments de texte et non une pagination imprimée. Une lecture partielle est signalée et ne représente pas le document entier.',
     'Le journal rapporte des opérations observables. Il ne décrit aucun raisonnement interne privé, aucune expérience subjective ni une introspection du système.',
     'Les fichiers exportés peuvent contenir vos informations personnelles, conversations et exemples. Conservez-les dans un emplacement de confiance ; les fichiers ne sont pas chiffrés.',
@@ -73,11 +75,52 @@
     seen.pop();
     return result;
   }
+  function scalarFields(value, allowed) {
+    var result = {};
+    allowed.forEach(function (key) {
+      if (!own(value, key)) return;
+      var item = value[key];
+      if (item === null || typeof item === 'boolean' || finite(item)) result[key] = item;
+      else if (typeof item === 'string') result[key] = item.slice(0, 1500);
+    });
+    return result;
+  }
+  function generationStatus(value) {
+    if (!value || typeof value !== 'object') return null;
+    var result = scalarFields(value, ['version','runtimeVersion','phase','supported','supportedFile','cachedSupported','unsupportedReason','ready','cached','storage','busy','error']);
+    if (value.model) result.model = scalarFields(value.model, ['id','name','file','revision','bytes','sha256','quantization','url']);
+    if (value.limits) result.limits = scalarFields(value.limits, ['contextTokens','outputTokens','contextCharacters','promptCharacters','answerCharacters']);
+    return result;
+  }
+  function generationInventory(state, context) {
+    var messages = arr(state.messages).filter(function (message) { return message.source === 'generation' && message.generation; }), models = [];
+    var status = context.generation || null;
+    function addModel(value, configured) {
+      var metadata = scalarFields(value, ['runtime','runtimeVersion','modelId','modelRevision','modelFile','modelSha256','bytes','quantization']);
+      if (!metadata.modelId || !metadata.modelRevision || !metadata.modelFile || !metadata.modelSha256) return;
+      var existing = models.find(function (model) { return ['runtime','runtimeVersion','modelId','modelRevision','modelFile','modelSha256'].every(function (key) { return model[key] === metadata[key]; }); });
+      if (existing) { if (configured) existing.configuredAtExport = true; if (metadata.bytes !== undefined) existing.bytes = metadata.bytes; return; }
+      metadata.configuredAtExport = Boolean(configured); metadata.weightsIncluded = false;
+      if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(metadata.modelId) && /^[a-f0-9]{40}$/.test(metadata.modelRevision) && /^[A-Za-z0-9_.-]+\.gguf$/.test(metadata.modelFile)) {
+        metadata.downloadURL = 'https://huggingface.co/' + metadata.modelId + '/resolve/' + metadata.modelRevision + '/' + metadata.modelFile;
+      }
+      models.push(metadata);
+    }
+    messages.forEach(function (message) { addModel(message.generation, false); });
+    if (status && status.model) addModel({ runtime:'wllama',runtimeVersion:status.runtimeVersion,modelId:status.model.id,modelRevision:status.model.revision,modelFile:status.model.file,modelSha256:status.model.sha256,bytes:status.model.bytes,quantization:status.model.quantization }, true);
+    var core = getCore();
+    return { format:'poi-local-generation',formatVersion:1,modelWeightsIncluded:false,modelStorage:'OPFS du navigateur ou fichier GGUF choisi pour la session ; poids toujours distincts de la sauvegarde personnelle',
+      personalStateLimitBytes:core && core.LIMITS ? core.LIMITS.importBytes : null, statusAtExport:status, models:models,
+      restoration:'Importer sauvegarde-poi.json restaure les messages et leurs métadonnées, sans télécharger le modèle. Sur un nouvel appareil ou après effacement du stockage, préparer séparément la génération locale avec le même fichier à la révision indiquée, puis vérifier son SHA-256. Le modèle peut être conservé dans OPFS ou choisi comme fichier GGUF pour la session. Dans le mode fichier, sélectionner à nouveau ce GGUF depuis Fichiers à chaque nouvelle session ; il n’est pas copié dans OPFS. Le statut exporté décrit le mode courant, sans l’attribuer rétroactivement aux anciens messages. Si la version de POI propose une autre révision, conserver cette distinction ; ne pas présenter ce modèle différent comme identique.',
+      citationScope:'Passages fournis au modèle ; aucune garantie que toutes les affirmations générées soient appuyées par ces passages.',
+      messages:messages.map(function (message) { return {messageId:message.id,createdAt:message.createdAt,generation:scalarFields(message.generation,['runtime','runtimeVersion','modelId','modelRevision','modelFile','modelSha256','local','inputTokens','outputTokens','contextCharacters','durationMs','finishReason','citationScope']),citations:arr(message.citations)}; }) };
+  }
   function getContext(context) {
     var result = {};
     ['createdAt','appVersion','coreVersion','selfTests','evaluation','evaluationAt','evaluationModelVersion','offline','storage','userAgent','language','platform','display','diagnostics','notes','trainingPolicy','limits'].forEach(function (key) {
       if (context && own(context,key)) result[key] = cleanSerializable(context[key]);
     });
+    if (context && own(context, 'generation')) result.generation = generationStatus(context.generation);
     if (!result.createdAt) result.createdAt = new Date().toISOString();
     if (Number.isNaN(new Date(result.createdAt).getTime())) throw new Error('La date de l’export est invalide.');
     result.createdAt = new Date(result.createdAt).toISOString();
@@ -88,6 +131,7 @@
       messages: arr(state.messages).length,
       userMessages: arr(state.messages).filter(function (m) { return m.role === 'user'; }).length,
       assistantMessages: arr(state.messages).filter(function (m) { return m.role === 'assistant'; }).length,
+      generatedMessages: arr(state.messages).filter(function (m) { return m.source === 'generation'; }).length,
       facts: arr(state.facts).length,
       examples: arr(state.examples).length,
       starterExamples: arr(state.examples).filter(function (e) { return e.origin === 'starter'; }).length,
@@ -213,6 +257,7 @@
     var context = getContext(rawContext);
     var counts = countsFor(state);
     var identity = state.identity || {};
+    var generation = generationInventory(state, context);
     var readableState = Object.assign({}, state, {documents:arr(state.documents).map(documentMetadata)});
     var core = getCore();
     var version = context.appVersion || (core && core.VERSION) || VERSION;
@@ -220,6 +265,8 @@
       return '<article class="message ' + (message.role === 'user' ? 'user' : 'assistant') + '"><div class="message-head"><strong>' + escapeHTML(valueOr(message.speakerName, message.role === 'user' ? 'Utilisateur' : message.role === 'assistant' ? 'Assistant' : valueOr(message.role,'Auteur inconnu'))) + '</strong><span>' + escapeHTML(dateLabel(message.createdAt)) + '</span></div><p class="message-text">' + escapeHTML(message.text) + '</p>' +
         '<p class="metadata">Message ' + (index + 1) + ' · ' + escapeHTML(message.id) + (message.source ? ' · ' + escapeHTML(label(SOURCE_LABELS,message.source)) : '') + (message.intent ? ' · ' + escapeHTML(label(INTENT_LABELS,message.intent)) : '') + (message.modelVersion ? ' · modèle ' + escapeHTML(message.modelVersion) : '') + (finite(message.score) ? ' · score ' + escapeHTML(message.score) : '') + (arr(message.documentIds).length ? ' · documents sélectionnés : ' + escapeHTML(message.documentIds.join(', ')) : '') + '</p>' +
         (message.explanation ? '<p class="explanation">' + escapeHTML(message.explanation) + '</p>' : '') +
+        (message.generation ? details('Provenance de la génération locale', keyValues(message.generation)) : '') +
+        (arr(message.citations).length ? details(message.source === 'generation' ? 'Passages fournis au modèle' : 'Sources de la réponse', (message.source === 'generation' ? '<p>Ces passages étaient présents dans le contexte du modèle. Leur conservation ne certifie pas toutes les affirmations de la réponse.</p>' : '') + table(['Document','Page ou segment','Passage exact'], message.citations.map(function (citation) { return [citation.name,citation.page,citation.excerpt]; }))) : '') +
         details('Enregistrement exact de ce message', '<pre>' + pretty(message) + '</pre>') + '</article>';
     }).join('');
     var trainings = arr(state.trainingRuns).map(function (run,index) {
@@ -236,7 +283,7 @@
     var dropped = Object.keys(retention).some(function (key) { return finite(retention[key]) && retention[key] > 0; });
     var body = '<header class="hero"><p class="eyebrow">POI · ATELIER D’IA</p><h1>Carnet d’apprentissage</h1><p class="subtitle">Export détaillé de toutes les données conservées</p><p>' + escapeHTML(dateLabel(context.createdAt)) + '</p><p class="metadata">Application ' + escapeHTML(version) + ' · schéma ' + escapeHTML(valueOr(state.schemaVersion,'non renseigné')) + ' · exporteur ' + VERSION + '</p></header>' +
       '<div class="notice"><strong>Une copie personnelle, non chiffrée.</strong> Ce rapport contient les conversations, faits, exemples et résultats présents dans votre application. Vérifiez son contenu avant de le partager.</div>' +
-      '<nav class="contents" aria-label="Sommaire"><a href="#synthese">Vue d’ensemble</a><a href="#identite">Identité</a><a href="#conversation">Conversation</a><a href="#documents">Documents</a><a href="#memoire">Mémoire</a><a href="#exemples">Exemples</a><a href="#apprentissage">Apprentissages</a><a href="#modeles">Modèles</a><a href="#evaluation">Évaluation</a><a href="#journal">Journal</a><a href="#diagnostics">Contrôles</a><a href="#contexte">Contexte</a><a href="#limites">Limites</a></nav>' +
+      '<nav class="contents" aria-label="Sommaire"><a href="#synthese">Vue d’ensemble</a><a href="#identite">Identité</a><a href="#conversation">Conversation</a><a href="#documents">Documents</a><a href="#memoire">Mémoire</a><a href="#exemples">Exemples</a><a href="#apprentissage">Apprentissages</a><a href="#modeles">Classifieur</a><a href="#generation">Génération locale</a><a href="#evaluation">Évaluation</a><a href="#journal">Journal</a><a href="#diagnostics">Contrôles</a><a href="#contexte">Contexte</a><a href="#limites">Limites</a></nav>' +
       '<section id="synthese"><h2>Vue d’ensemble</h2><div class="stats">' + [[counts.messages,'messages'],[counts.facts,'faits mémorisés'],[counts.examples,'exemples'],[counts.trainingRuns,'entraînements']].map(function (stat) { return '<div><strong>' + stat[0] + '</strong><span>' + stat[1] + '</span></div>'; }).join('') + '</div><p>Ce rapport distingue les <strong>règles programmées</strong>, la <strong>mémoire de faits</strong> et les <strong>paramètres appris</strong>. Ces mécanismes sont différents et aucun ne prouve, à lui seul, une maîtrise générale du langage.</p>' +
       keyValues({creationEtat:state.meta && state.meta.createdAt,derniereModification:state.meta && state.meta.updatedAt,dateExportUTC:context.createdAt,modeleEntraine:!!state.model,versionCourante:state.model && state.model.version,versionPrecedente:state.previousModel && state.previousModel.version}) +
       '<h3>Conservation de l’historique</h3><p>' + (dropped ? 'Des éléments ont été écartés par les limites de conservation. Les compteurs ci-dessous indiquent les pertes connues.' : 'Les compteurs ne signalent pas d’élément écarté par les limites de conservation. Cela ne permet pas de reconstituer des données supprimées volontairement ou perdues avant cet état.') + '</p>' + keyValues(retention) + '</section>' +
@@ -246,7 +293,12 @@
       '<section id="memoire"><h2>Mémoire des faits</h2><p>Les valeurs ci-dessous sont enregistrées comme déclarations de l’utilisateur. Leur présence en mémoire ne signifie pas qu’elles ont été vérifiées ni qu’un poids du modèle a changé.</p>' + table(['Clé','Valeur','Auteur','Création','Modification','Identifiant'],arr(state.facts).map(function (fact) { return [fact.key,fact.value,fact.author,dateLabel(fact.createdAt),dateLabel(fact.updatedAt),fact.id]; })) + '</section>' +
       '<section id="exemples"><h2>Exemples d’apprentissage actuels</h2><p>Le jeu actuel peut différer du jeu employé lors d’un entraînement précédent. Les instantanés enregistrés se trouvent dans la section Apprentissages.</p>' + table(['Formulation','Intention','Origine','Identifiant','Création'],arr(state.examples).map(function (example) { return [example.text,label(INTENT_LABELS,example.intent),example.origin,example.id,valueOr(example.createdAt,'Non renseignée')]; })) + '</section>' +
       '<section id="apprentissage"><h2>Historique des apprentissages</h2><p>Les pertes et exactitudes d’entraînement décrivent l’ajustement aux exemples utilisés ; l’exactitude d’entraînement mesure la première catégorie prédite, avant les seuils de refus. Les évaluations avant/après portent sur le jeu de contrôle fourni et comptent les refus comme des réponses incorrectes. Les nombres absents restent non mesurés.</p>' + (trainings || '<p class="empty">Aucun entraînement conservé. Le modèle peut encore être non entraîné.</p>') + '</section>' +
-      '<section id="modeles"><h2>Paramètres et configuration des modèles</h2><p>Les poids, biais et caractéristiques sont reproduits sans arrondi volontaire ni suppression. Les CSV permettent de les analyser ; les objets exacts sont également inclus dans les fichiers JSON.</p>' + (modelEntries(state).map(reportModel).join('') || '<p class="empty">Aucun modèle appris n’est enregistré.</p>') + '</section>' +
+      '<section id="modeles"><h2>Paramètres et configuration du classifieur</h2><p>Les poids, biais et caractéristiques du classifieur sont reproduits sans arrondi volontaire ni suppression. Les CSV permettent de les analyser ; les objets exacts sont également inclus dans les fichiers JSON.</p>' + (modelEntries(state).map(reportModel).join('') || '<p class="empty">Aucun modèle appris n’est enregistré.</p>') + '</section>' +
+      '<section id="generation"><h2>Génération locale par modèle préentraîné</h2><p>' + counts.generatedMessages + ' réponse(s) générée(s) conservée(s). Ce mécanisme de rédaction est distinct du classifieur entraîné dans POI. Les poids du générateur ne sont ni réentraînés par la conversation ni inclus dans cette sauvegarde personnelle.</p>' +
+      '<p>' + escapeHTML(generation.restoration) + '</p><p>Les révisions et empreintes ci-dessous identifient les fichiers de modèle. Récupérer le même fichier ne garantit pas une réponse identique lors d’un nouveau calcul.</p>' +
+      (generation.models.length ? generation.models.map(function (model) { return '<article class="block"><h3>' + escapeHTML(model.modelId) + '</h3>' + keyValues(model) + '</article>'; }).join('') : '<p class="empty">Aucune utilisation ni configuration de modèle génératif n’a été fournie pour cet export.</p>') +
+      (generation.statusAtExport ? details('État du moteur fourni au moment de l’export', keyValues(generation.statusAtExport)) : '') +
+      '<p>Les métadonnées exactes sont dans <code>generation-locale.json</code> et dans chaque message concerné de la sauvegarde. Les citations correspondent aux passages fournis au modèle, sans garantir toutes ses affirmations.</p></section>' +
       '<section id="evaluation"><h2>Évaluation disponible au moment de l’export</h2>' + (context.evaluation ? '<p>Date de la mesure : ' + escapeHTML(dateLabel(context.evaluationAt || context.evaluation.evaluatedAt)) + ' · version évaluée : ' + escapeHTML(own(context,'evaluationModelVersion') ? (context.evaluationModelVersion === null ? 'modèle non entraîné' : context.evaluationModelVersion) : valueOr(context.evaluation.modelVersion,'Non renseignée')) + '.</p>' : '') + evaluationHTML(context.evaluation) + '<p>Ces résultats ne sont pas recalculés par l’exporteur. Ils sont ceux fournis par l’application ; vérifiez leur date et leur correspondance avec la version courante dans le contexte.</p></section>' +
       '<section id="journal"><h2>Journal intégral des opérations conservées</h2>' + table(['Date','Type','Auteur','Détail','Message lié','Identifiant'],arr(state.events).map(function (event) { return [dateLabel(event.createdAt),event.type,event.author,typeof event.detail === 'object' ? json(event.detail) : event.detail,valueOr(event.messageId,''),event.id]; })) + '</section>' +
       '<section id="diagnostics"><h2>Contrôles disponibles</h2>' + diagnosticsHTML + '<p>Ces contrôles portent sur le périmètre indiqué. Ils ne remplacent pas l’essai sur votre propre iPhone et n’attestent pas une compréhension générale du français.</p></section>' +
@@ -266,13 +318,14 @@
     // Every representation uses the same validated state, including trimmed
     // legacy strings, so CSV, report and restoration cannot diverge.
     state = JSON.parse(canonical);
+    var generation = generationInventory(state, context);
     var files = [];
     function add(name, role, content) { files.push({name:name,role:role,content:content}); }
     add('sauvegarde-poi.json','Sauvegarde complète et restaurable',canonical);
     add('rapport-poi-complet.html','Rapport lisible, autonome et imprimable',generateReport(state,context));
     add('conversation.csv','Tous les messages conservés et leurs métadonnées',csv(
-      ['ordre','id','date_utc','role','nom_auteur_lors_du_message','version_modele','texte','source','intention','score','explication','documents_ids_json','enregistrement_complet_json'],
-      arr(state.messages).map(function (m,i) { return [i+1,m.id,m.createdAt,m.role,valueOr(m.speakerName,m.role === 'user' ? 'Utilisateur' : 'Assistant'),m.modelVersion,m.text,m.source,m.intent,m.score,m.explanation,arr(m.documentIds),JSON.stringify(m)]; })
+      ['ordre','id','date_utc','role','nom_auteur_lors_du_message','version_modele','texte','source','intention','score','explication','documents_ids_json','citations_json','generation_modele','generation_revision','generation_jetons_entree','generation_jetons_sortie','generation_duree_ms','generation_json','enregistrement_complet_json'],
+      arr(state.messages).map(function (m,i) { var g=m.generation||{}; return [i+1,m.id,m.createdAt,m.role,valueOr(m.speakerName,m.role === 'user' ? 'Utilisateur' : 'Assistant'),m.modelVersion,m.text,m.source,m.intent,m.score,m.explanation,arr(m.documentIds),arr(m.citations),g.modelId,g.modelRevision,g.inputTokens,g.outputTokens,g.durationMs,m.generation||null,JSON.stringify(m)]; })
     ));
     add('memoire.csv','Faits mémorisés, auteurs et dates',csv(
       ['id','cle','valeur','auteur','creation_utc','modification_utc','enregistrement_complet_json'],
@@ -283,8 +336,8 @@
       arr(state.examples).map(function (e) { return [e.id,e.text,e.intent,label(INTENT_LABELS,e.intent),e.origin,e.createdAt,JSON.stringify(e)]; })
     ));
     add('documents.csv','Inventaire des documents, provenance et couverture de lecture',csv(
-      ['id','nom','type_mime','format','taille_original_octets','ajout_utc','sha256_enregistre','methode_extraction','pages_totales','pages_traitees','lecture_partielle','avertissements_json','original_dans_archive','texte_dans_archive'],
-      arr(state.documents).map(function (doc,index) { var ex=doc.extraction||{}, paths=documentPaths(doc,index); return [doc.id,doc.name,doc.mime,doc.kind,doc.size,doc.addedAt,doc.sha256,ex.method,ex.totalPages,ex.processedPages,ex.truncated,ex.warnings,paths.original,paths.extracted]; })
+      ['id','nom','type_mime','format','taille_original_octets','ajout_utc','sha256_enregistre','methode_extraction','pages_totales','pages_traitees','lecture_partielle','duree_ocr_ms','avertissements_json','original_dans_archive','texte_dans_archive'],
+      arr(state.documents).map(function (doc,index) { var ex=doc.extraction||{}, paths=documentPaths(doc,index); return [doc.id,doc.name,doc.mime,doc.kind,doc.size,doc.addedAt,doc.sha256,ex.method,ex.totalPages,ex.processedPages,ex.truncated,ex.ocrDurationMs,ex.warnings,paths.original,paths.extracted]; })
     ));
     var documentPages = [];
     arr(state.documents).forEach(function (doc,index) {
@@ -328,6 +381,7 @@
       ['modele','entrainement_id','version','index','caracteristique'],vocabulary
     ));
     add('modeles.json','Modèles actuels, précédents et instantanés exacts',json(modelEntries(state)));
+    add('generation-locale.json','Métadonnées de génération, révisions et récupération des modèles ; sans poids préentraînés',json(generation));
     add('contexte-export.json','Contexte technique et mesures réellement fournies',json(context));
     add('regles-et-methodologie.txt','Description des mécanismes et limites d’interprétation',[
       'POI — RÈGLES ET MÉTHODOLOGIE', '',
@@ -336,8 +390,10 @@
       'Mémoire : les commandes prises en charge enregistrent ou rappellent des paires clé/valeur déclarées par l’utilisateur. Elles ne vérifient pas les faits.',
       'Commandes de mémoire : « Retiens : couleur préférée = bleu » ; « Que sais-tu sur couleur préférée ? ». Les variantes acceptées dépendent des règles de cette version.',
       'Apprentissage : le classifieur softmax ajuste des poids et biais à partir d’exemples étiquetés. Le vocabulaire, les paramètres, la configuration et les seuils effectifs figurent dans modeles.json.',
-      'Documents : extraction locale du texte, recherche par mots et sélection automatique de passages cités. Une pièce jointe ne modifie pas les paramètres du classifieur. Une page non lue ou un résultat OCR incertain ne doit pas être interprété comme une lecture exhaustive.',
-      'Réponses : une intention reconnue est traitée par les fonctions programmées ; la formulation de la réponse est préparée. Une intention incertaine peut être refusée.',
+      'Documents : réponses par sélection de phrases selon la question, définitions explicites, résumé extractif, mesures lexicales et recherche de passages cités. Une pièce jointe ne modifie pas les paramètres du classifieur. Une page non lue ou un résultat OCR incertain ne doit pas être interprété comme une lecture exhaustive. La durée de l’OCR, lorsqu’elle est mesurée, couvre uniquement la reconnaissance du texte et exclut le chargement et la préparation du lecteur.',
+      'Réponses programmées : une intention reconnue est traitée par les fonctions programmées ; la formulation de la réponse est préparée. Une intention incertaine peut être refusée.',
+      'Génération locale : lorsqu’elle est préparée puis utilisée explicitement, un modèle de langage préentraîné rédige la réponse sur l’appareil à partir d’un contexte borné. Cette opération ne réentraîne pas ses poids. Les messages source generation conservent le modèle, la révision, le SHA-256, la version du moteur, les nombres de jetons, la durée et la raison de fin.',
+      'Modèle préentraîné : les poids conservés dans OPFS ou lus depuis un GGUF sélectionné sont exclus de la sauvegarde personnelle et de sa limite de taille. Le mode fichier ne copie pas le modèle dans OPFS ; sélectionner à nouveau le GGUF depuis Fichiers à chaque nouvelle session. generation-locale.json indique les révisions utilisées et comment récupérer puis vérifier le même fichier. Les paramètres du petit classifieur restent intégralement exportés dans modeles.json.',
       'Score : le score n’est pas une preuve de vérité ni de compréhension. Le système possède des seuils de score, de marge et de couverture, exportés avec le modèle.',
       'Évaluation : les résultats fournis sont enregistrés sans exécuter de nouveau test lors de l’export. Les entraînements et leurs jeux d’exemples sont conservés lorsqu’un instantané existe.',
       'Reproductibilité : les paramètres et exemples permettent d’examiner et de reprendre l’état. La durée de calcul peut varier selon l’appareil et la version de son navigateur. Une absence de mesure reste une absence de mesure.',
@@ -354,6 +410,7 @@
       '7. Le manifeste donne l’inventaire, les compteurs, la configuration et les empreintes CRC32 des autres fichiers. CRC32 détecte des erreurs de transfert ; ce n’est pas une signature cryptographique ni une preuve d’authenticité.',
       '8. Le rapport ne lance ni entraînement ni test supplémentaire et n’invente aucune mesure. Les résultats absents sont indiqués non fournis.',
       '9. Les originaux des pièces jointes sont dans documents/originaux/ et les textes extraits dans documents/textes/. La sauvegarde JSON les restaure aussi : il n’est pas nécessaire de joindre à nouveau les fichiers. documents.json, documents.csv et pages-documents.csv décrivent les méthodes, les pages lues, les limites et les références.',
+      '10. Le modèle génératif préentraîné est conservé séparément dans OPFS ou lu depuis un fichier GGUF sélectionné. Ses poids ne sont pas dans cette archive. L’import JSON ne déclenche aucun téléchargement ; préparez séparément la génération locale sur un nouvel appareil. En mode fichier, sélectionnez le GGUF depuis Fichiers à chaque nouvelle session : il n’est pas copié dans OPFS. generation-locale.json conserve la révision précise, le nom du fichier et son SHA-256 pour récupérer le même modèle, sans garantir une nouvelle réponse identique.',
       '', 'CONFIDENTIALITÉ',
       'Cette archive n’est pas chiffrée. Elle peut contenir des données personnelles ou confidentielles. Partagez-la uniquement après vérification.',
       '', 'CONSERVATION',
@@ -366,6 +423,7 @@
       'entrainements.csv, evaluation.csv : mesures et décisions enregistrées.',
       'journal-evenements.csv : opérations observables conservées.',
       'parametres-modele.csv, vocabulaire-modele.csv, modeles.json : poids, biais, caractéristiques et configurations.',
+      'generation-locale.json : provenance des réponses générées et références exactes des modèles préentraînés, sans leurs poids.',
       'contexte-export.json : environnement et diagnostics fournis au moment de l’export.',
       'documents.json, documents.csv, pages-documents.csv : inventaire, extraction complète et références.',
       'documents/originaux/ et documents/textes/ : fichiers joints et texte extrait sans suppression volontaire.',
@@ -373,12 +431,13 @@
       'manifeste.json : inventaire et informations de vérification.', ''
     ].join('\n'));
     var manifest = {
-      format:'poi-detailed-export', formatVersion:2, generator:'POIExport', exporterVersion:VERSION,
+      format:'poi-detailed-export', formatVersion:3, generator:'POIExport', exporterVersion:VERSION,
       appVersion:context.appVersion || null, coreVersion:context.coreVersion || (core && core.VERSION) || null, stateSchemaVersion:valueOr(state.schemaVersion,null),
       createdAt:context.createdAt, timeZoneForReport:'Europe/Paris', restorableFile:'sauvegarde-poi.json',
       encoding:'UTF-8', csv:{delimiter:';',bom:true,quote:'"',formulaProtection:'Apostrophe initiale sur cellules textuelles à risque ; contenu exact dans JSON.'},
       counts:countsFor(state), retention:state.retention || {}, limits:context.limits || (core && core.LIMITS) || null, identity:state.identity || {},
       currentModel:modelMetadata(state.model), previousModel:modelMetadata(state.previousModel),
+      generation:{metadataFile:'generation-locale.json',modelWeightsIncluded:false,modelStorage:generation.modelStorage,models:generation.models,messageCount:generation.messages.length},
       measurements:{selfTestsProvided:!!context.selfTests,evaluationProvided:!!context.evaluation,evaluationAt:context.evaluationAt || null,evaluationModelVersion:valueOr(context.evaluationModelVersion,null),testsRunByExporter:false},
       integrity:{algorithm:'CRC32',cryptographic:false,scope:'Les empreintes ci-dessous couvrent les autres fichiers. Le manifeste lui-même possède un CRC dans les en-têtes ZIP.'},
       privacy:{encrypted:false,containsPersonalData:true,networkRequestsByExporter:0}, limitations:LIMITATIONS,

@@ -26,9 +26,9 @@
 <body>
   <header>
     <a class="back" href="./">← Revenir à POI</a>
-    <p class="tag">Le guide · Version 0.2.0</p>
+    <p class="tag">Le guide · Version 0.3.0</p>
     <h1>Votre espace POI.</h1>
-    <p class="lead">POI est une base de travail locale pour votre iPhone : un petit modèle qui s’entraîne, une mémoire consultable et des documents dont vous pouvez extraire, rechercher et exporter le texte.</p>
+    <p class="lead">POI réunit une mémoire, des documents et un modèle de langage optionnel pour rédiger des réponses sur l’appareil. Un petit classifieur pédagogique reste entraînable séparément.</p>
   </header>
   <main>
     <section>
@@ -52,8 +52,18 @@
         <div><strong>Atelier</strong><p>Modifiez son identité, examinez ses paramètres, exportez ou restaurez votre travail.</p></div>
       </div>
       <p>Dans <strong>Atelier → Texte et apparence</strong>, choisissez le thème clair, le thème sombre ou le réglage automatique de l’iPhone. La zone de brouillon garde une écriture de 16 pixels, autorise les retours à la ligne et n’envoie le texte qu’avec le bouton flèche sur iPhone.</p>
-      <p>Le modèle classe les phrases dans <strong>six intentions</strong> : identité, rôle, capacités, mémorisation, rappel et salutation. Les réponses sont composées par le programme à partir de cette intention, des réglages et de la mémoire. POI ne génère pas une réponse libre à n’importe quel sujet.</p>
+      <p>Le modèle classe les phrases dans <strong>six intentions</strong> : identité, rôle, capacités, mémorisation, rappel et salutation. Les réponses sont composées par le programme à partir de cette intention, des réglages et de la mémoire. Le modèle de langage optionnel ajoute une rédaction plus souple, à partir de la demande et des données sélectionnées.</p>
       <p>Dans <strong>Atelier</strong>, vous pouvez changer le nom et les éléments d’identité proposés. L’utilisation de « je » correspond à un rôle programmé. Elle n’est pas une mesure de conscience ou d’expérience subjective.</p>
+    </section>
+
+    <section>
+      <h2>Rédiger avec le modèle de langage local</h2>
+      <ol><li>Dans <strong>Conversation</strong>, ouvrez <strong>Rédaction locale</strong> puis touchez <strong>Préparer le modèle (491 Mo)</strong>.</li><li>Restez connecté pour ce premier téléchargement depuis le dépôt officiel du modèle. Gardez la page ouverte pendant la vérification et le chargement.</li><li>Attendez <strong>modèle prêt</strong>, activez explicitement <strong>Essayer les réponses générées — expérimental</strong>, sélectionnez les documents utiles et posez votre question. Une réponse s’affiche progressivement puis est enregistrée à la fin.</li><li>Après réouverture, préparez de nouveau le modèle pour charger sa copie locale. Une copie complète peut être chargée sans réseau. <strong>Libérer la mémoire vive</strong> conserve les fichiers téléchargés.</li></ol>
+      <p>Si le cache interne manque d’espace, utilisez le lien de téléchargement officiel du panneau, conservez le fichier dans <strong>Fichiers</strong>, puis touchez <strong>Charger un fichier GGUF</strong>. POI vérifie le même modèle et le lit localement sans le recopier dans ce cache. Il faut le choisir de nouveau à chaque session, avec un runtime déjà disponible pour fonctionner en mode avion. Le besoin en mémoire vive reste le même.</p>
+      <p><strong>Arrêter</strong> conserve votre question dans le brouillon sans enregistrer une réponse incomplète. L’arrêt peut attendre que le traitement initial du contexte se termine. Les commandes explicites de mémoire sont traitées directement ; le modèle rédige les autres demandes quand il est prêt et activé.</p>
+      <p>Qwen2.5 0.5B Instruct est un modèle préentraîné distinct du classifieur à six intentions. Il reçoit jusqu’à 2 000 caractères de contexte sélectionné et produit jusqu’à 384 jetons. Les échanges, souvenirs et documents ne sont pas envoyés à un service d’IA. Lui fournir ces données ne modifie pas ses paramètres.</p>
+      <p>Une réponse générée peut être erronée. Ouvrez <strong>D’où vient cette réponse ?</strong> pour voir la durée de calcul et les passages <strong>[S1]</strong>, <strong>[S2]</strong>, etc. Ces passages sont ceux fournis au modèle, pas une preuve automatique de chaque affirmation. Pour un long livre, seuls des extraits sont fournis à chaque question.</p>
+      <div class="note">Le statut hors ligne de l’application est distinct de celui du modèle. Le navigateur peut effacer ses fichiers ; il faudra alors les télécharger de nouveau. Les poids de 491 Mo ne sont pas inclus dans vos exports personnels de 25 Mio : leurs références y sont conservées pour retrouver la même version.</div>
     </section>
 
     <section>
@@ -77,6 +87,7 @@
       </ol>
       <p>Répéter deux fois un essai à 200 passages ne revient pas à un essai de 400 passages : chaque entraînement repart des mêmes poids initiaux. Les résultats sur vos exemples personnels montrent leur reconnaissance, pas une capacité générale à comprendre de nouvelles phrases.</p>
       <div class="note"><strong>Gardez POI ouverte pendant l’entraînement.</strong> iOS peut suspendre une page en arrière-plan. Attendez la fin et la confirmation de sauvegarde avant de quitter l’app.</div>
+      <p>Vous pouvez déjà demander <code>Quelle est ma couleur préférée ?</code> après avoir enregistré <code>Retiens : couleur préférée = bleu</code>. <code>Que sais-tu sur moi ?</code> rappelle les faits que vous avez déclarés. Les questions documentaires et le rappel de souvenirs fonctionnent sans entraîner le classifieur.</p>
       <p>Le petit modèle ajuste réellement ses paramètres numériques à partir des exemples. Chaque séance repart de poids nuls et utilise tous les exemples conservés ; la version active reste disponible jusqu’à l’adoption du nouvel essai. La simple conversation n’entraîne pas automatiquement un grand modèle de langage. Le score de classement affiché décrit la préférence du classifieur entre ses catégories ; il ne prouve pas que la réponse est vraie.</p>
       <h3>Comprendre les résultats</h3>
       <p>Le score d’entraînement mesure les exemples utilisés pour apprendre. Le jeu d’évaluation réservé utilise d’autres phrases. Ne copiez pas ces phrases dans l’entraînement si vous voulez conserver une mesure distincte. Après de nombreux réglages guidés par ce même jeu, prévoyez de nouveaux exemples pour une évaluation indépendante.</p>
@@ -89,7 +100,7 @@
         <p><strong>Pour retenir :</strong> « Retiens : couleur préférée = bleu »</p>
         <p><strong>Pour rappeler :</strong> « Que sais-tu sur couleur préférée ? »</p>
       </div>
-      <p>Vérifiez le fait dans <strong>Mémoire</strong>. Vous pouvez aussi écrire « Retiens que ma couleur préférée est bleu ». Pour le rappel, reprenez le nom exact du fait après « Que sais-tu sur ». Si votre formulation n’est pas reconnue, utilisez les contrôles de mémoire de l’app ou les commandes ci-dessus. POI ne dispose pas d’une compréhension générale du langage.</p>
+      <p>Vérifiez le fait dans <strong>Mémoire</strong>. Vous pouvez aussi écrire « Retiens que ma couleur préférée est bleu ». Pour le rappel, reprenez le nom exact du fait après « Que sais-tu sur ». Si votre formulation n’est pas reconnue, utilisez les contrôles de mémoire de l’app ou les commandes ci-dessus. Le modèle génératif peut reformuler les données, avec les limites de précision d’un petit modèle.</p>
       <p>Les faits, les exemples, les paramètres appris et l’historique sont enregistrés sur cet appareil. Le navigateur peut supprimer des données lors d’un nettoyage, d’un manque d’espace ou de certains changements de site. <strong>Un export régulier reste nécessaire pour conserver votre travail.</strong></p>
     </section>
 
@@ -99,13 +110,15 @@
         <li>Dans <strong>Conversation</strong>, touchez <strong>Joindre</strong> près du brouillon et choisissez votre fichier dans Fichiers ou votre photothèque.</li>
         <li>Gardez la page ouverte pendant la lecture. L’avancement est affiché et vous pouvez annuler. Un gros PDF ou une reconnaissance de texte demande plus de temps qu’un fichier texte.</li>
         <li>Vérifiez les pages lues, les avertissements et le texte extrait. Cochez les documents à utiliser pour votre question.</li>
-        <li>Écrivez <code>Étudie ce document</code> pour une fiche de lecture, ou <code>Recherche les passages sur la mémoire</code> pour retrouver des extraits. Les réponses indiquent les documents et les pages ou segments utilisés.</li>
+        <li>Posez une question précise sur le contenu, ou écrivez <code>Résume ce document</code>, <code>Analyse le vocabulaire de ce document</code> ou <code>Recherche les passages sur la mémoire</code>. Les réponses indiquent les documents et les pages ou segments utilisés.</li>
       </ol>
       <p><strong>Formats pris en charge :</strong> texte TXT, Markdown, CSV, JSON, HTML, Word DOCX, PDF et images PNG, JPEG ou WebP. Pour un EPUB, un ancien fichier DOC, un document protégé ou une photo HEIC non reconnue, utilisez d’abord une copie PDF, TXT ou JPEG.</p>
       <p><strong>La lecture reste locale et gratuite.</strong> POI conserve le fichier original, le texte extrait et les références sur cet appareil. Le contenu ne part vers aucun service d’analyse. Joindre un document n’entraîne pas automatiquement le modèle de conversation.</p>
-      <div class="note">Une fiche de lecture rassemble des passages et des mots récurrents. POI ne possède pas les capacités d’analyse générale de ChatGPT. Pour une photo, cette version lit le texte visible par reconnaissance optique ; elle ne décrit pas librement une scène, un visage, un tableau ou un schéma.</div>
+      <div class="note">Sans générateur, une réponse factuelle reprend les phrases qui répondent le mieux à la question. Le résumé est une sélection de phrases ; l’analyse fournit des mesures du vocabulaire. Une définition doit être explicitement présente dans le texte. POI peut manquer une reformulation ou sélectionner un passage insuffisant, et ne possède pas les capacités d’analyse générale de ChatGPT. Pour une photo, cette version lit le texte visible par reconnaissance optique ; elle ne décrit pas librement une scène, un visage, un tableau ou un schéma.</div>
       <p>La reconnaissance du français peut confondre des lettres, des chiffres ou l’ordre des colonnes. Comparez les citations au document original avant de vous y fier. Si le livre est partiellement lu, le résultat le précise ; les pages non lues ne sont pas résumées.</p>
-      <p class="small">Limites de cette version : 6 documents, 8 Mio par fichier, 12 Mio d’originaux au total, 600 000 caractères extraits par document, jusqu’à 200 pages PDF avec texte. La reconnaissance des PDF scannés est limitée à 3 pages pour préserver les ressources de l’iPhone. La sauvegarde complète reste limitée à 25 Mio ; si l’ensemble ne tient plus, l’ajout est refusé et l’état précédent est conservé.</p>
+      <p>Si un document ancien est marqué « lecture partielle », touchez <strong>Compléter la lecture</strong> pour reprendre l’original conservé avec les limites actuelles. Son identité, sa date d’ajout et vos échanges sont préservés. Une annulation ou une erreur conserve la lecture précédente.</p>
+      <p><strong>La durée de l’OCR</strong> s’affiche dans l’aperçu pour les nouveaux imports utilisant cette reconnaissance. Elle mesure uniquement la reconnaissance du texte, cumulée sur les pages concernées, hors téléchargement et préparation du lecteur. Aucune durée n’est inventée pour les anciens imports.</p>
+      <p class="small">Limites de cette version : 6 documents, 8 Mio par fichier, 12 Mio d’originaux au total, 1 200 000 caractères extraits par document, jusqu’à 200 pages PDF avec texte. La reconnaissance des PDF scannés est limitée à 3 pages pour préserver les ressources de l’iPhone. La sauvegarde complète reste limitée à 25 Mio ; si l’ensemble ne tient plus, l’ajout est refusé et l’état précédent est conservé.</p>
       <p class="small">Les modules PDF, Word et OCR se téléchargent à leur première utilisation depuis le site POI. Les textes déjà extraits restent accessibles hors ligne. Pour un nouvel import hors ligne, les composants nécessaires doivent déjà être disponibles ; testez le format souhaité en mode avion sur votre appareil.</p>
     </section>
 
@@ -113,6 +126,8 @@
       <h2>6. Exporter tout le travail conservé</h2>
       <p>Dans <strong>Atelier</strong>, utilisez <strong>Export complet</strong>. Vous obtenez une archive ZIP contenant une sauvegarde JSON restaurable, le rapport <code>rapport-poi-complet.html</code> lisible, les tableaux CSV et le manifeste décrivant l’export.</p>
       <p>L’archive détaille les données effectivement conservées : conversations, faits, exemples, entraînements, mesures, journal, paramètres du modèle, évaluations et documents joints. Les originaux sont dans <code>documents/originaux/</code>, les textes extraits dans <code>documents/textes/</code>. Les métadonnées, les pages lues, les avertissements et les citations sont aussi conservés. Les limites de rétention et les éventuels compteurs sont indiqués ; un export ne peut pas reconstituer des données déjà effacées ou qui n’ont jamais été enregistrées.</p>
+      <p>Si un document ancien est marqué « lecture partielle », touchez <strong>Compléter la lecture</strong> pour reprendre l’original conservé avec les limites actuelles. Son identité, sa date d’ajout et vos échanges sont préservés. Une annulation ou une erreur conserve la lecture précédente.</p>
+      <p><strong>La durée de l’OCR</strong> s’affiche dans l’aperçu pour les nouveaux imports utilisant cette reconnaissance. Elle mesure uniquement la reconnaissance du texte, cumulée sur les pages concernées, hors téléchargement et préparation du lecteur. Aucune durée n’est inventée pour les anciens imports.</p>
       <p class="small">Limites de cette version : 2 000 messages, 5 000 événements et 100 entraînements conservés. Quand ces historiques sont pleins, les entrées les plus anciennes sont retirées et comptées. La mémoire est limitée à 100 faits, et le jeu d’apprentissage à 400 exemples ; un ajout au-delà de ces limites est refusé.</p>
       <ol class="steps">
         <li>Enregistrez le ZIP dans <strong>Fichiers</strong> sur l’iPhone. Selon Safari, ouvrez la liste des téléchargements ou choisissez <strong>Enregistrer dans Fichiers</strong> depuis le menu de partage.</li>
@@ -140,7 +155,7 @@
 
     <section>
       <h2>8. Repères et limites</h2>
-      <p>POI est un prototype pédagogique conçu pour un petit écran et des calculs modestes. Elle ne remplace pas un assistant généraliste et n’a pas été testée physiquement sur votre iPhone SE. La vérification finale du mode avion et de la sauvegarde doit se faire sur votre appareil.</p>
+      <p>L’utilisation de la version précédente sur l’iPhone physique et son fonctionnement réel en mode avion ont été confirmés par l’utilisateur. Le nouveau modèle génératif demande davantage de mémoire et de calcul : ses performances et son rechargement hors ligne restent à mesurer sur cet appareil. Le prototype conserve les limites de précision d’un petit modèle.</p>
       <p>Le premier chargement, l’installation et les mises à jour ont besoin d’Internet. Une fois le cache complet enregistré et vérifié, les fonctions de conversation, de mémoire et d’entraînement prévues s’exécutent localement. L’effacement des données du site peut supprimer aussi cette disponibilité hors ligne.</p>
       <h3>Documentation de référence</h3>
       <ul class="small">
@@ -152,6 +167,6 @@
       <p class="small">Ces liens s’ouvrent sur Internet. Le reste de ce guide est inclus dans les fichiers hors ligne de POI.</p>
     </section>
   </main>
-  <footer>POI · Atelier d’IA · Version 0.2.0<br>Une base simple à comprendre, à modifier et à conserver.</footer>
+  <footer>POI · Atelier d’IA · Version 0.3.0<br>Une base simple à comprendre, à modifier et à conserver.</footer>
 </body>
 </html>

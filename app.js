@@ -3,7 +3,8 @@
   var Core = window.POICore;
   var Exporter = window.POIExport;
   var Docs = window.POIDocuments;
-  var APP_VERSION = '0.2.0';
+  var Generator = window.POIGenerator, GenerationContext = window.POIGenerationContext;
+  var APP_VERSION = '0.3.0';
   var state, db = null, storageMode = 'memory', saveQueue = Promise.resolve();
   var saveRevision = 0, writeBlocked = false, lastSavedAt = null, lastStorageError = null, lastValidSnapshot = null;
   var candidate = null, selfTests = null, evaluation = null, evaluationAt = null, evaluationModelVersion = null;
@@ -11,11 +12,12 @@
   var training = false, exporting = false, toastTimer, modalResolve, previousFocus;
   var selectedDocumentIds = new Set(), documentImportController = null, documentImportGeneration = 0;
   var documentPreviewURLs = new Set();
+  var generatorController = null, generationEpoch = 0, generationDraft = null, generationNotice = '', generationFrame = null;
   var DOCUMENT_LIMITS = { fileBytes: 8 * 1024 * 1024, totalBytes: 12 * 1024 * 1024, count: 6 };
   var welcomeHTML = document.getElementById('welcome').outerHTML;
   var initialTab = ['conversation', 'apprendre', 'memoire', 'atelier'].indexOf(location.hash.slice(1)) >= 0 ? location.hash.slice(1) : 'conversation';
   var labels = { conversation: 'Conversation', apprendre: 'Apprendre', memoire: 'Mémoire', atelier: 'Atelier' };
-  var sourceLabels = { rule: 'Règle', model: 'Modèle appris', memory: 'Mémoire', document: 'Document', unknown: 'Non reconnu' };
+  var sourceLabels = { rule: 'Règle', model: 'Modèle appris', memory: 'Mémoire', document: 'Document', generation: 'Modèle de langage local', unknown: 'Non reconnu' };
   var runLabels = { evaluated: 'Évaluée, non adoptée', adopted: 'Adoptée', rejected: 'Écartée', rolled_back: 'Retour à la précédente' };
 
   function $(id) { return document.getElementById(id); }
@@ -51,7 +53,7 @@
     var target = $('active-model-detail'); target.replaceChildren();
     var coverage = activeExampleCoverage(), summary;
     if (!state.model) {
-      summary = 'Aucun modèle actif : POI utilise ses règles et sa mémoire.';
+      summary = 'Réponses disponibles à partir de vos souvenirs et des documents sélectionnés.';
       target.appendChild(el('strong', '', 'Aucun modèle entraîné pour le moment.'));
       target.appendChild(el('p', '', 'Ajoutez vos formulations, calculez une version puis adoptez-la pour l’utiliser dans la conversation.'));
     } else {
@@ -199,7 +201,7 @@
     $('memory-count').textContent = factCount + (factCount > 1 ? ' souvenirs' : ' souvenir');
     $('dataset-count').textContent = exampleCount + ' exemples';
     $('rollback-button').disabled = !state.previousModel || training;
-    $('clear-chat').disabled = !state.messages.length;
+    $('clear-chat').disabled = !state.messages.length && !generationDraft;
     $('message-input').placeholder = 'Poser une question à ' + state.identity.name;
     var r = state.retention;
     $('retention-detail').textContent = 'L’atelier conserve au plus 2 000 messages, 5 000 événements, 100 entraînements, 100 souvenirs et 400 exemples. Des éléments anciens peuvent être retirés de l’historique ; exportez régulièrement. Déjà retirés par les limites : ' + r.messagesDropped + ' messages, ' + r.eventsDropped + ' événements, ' + r.trainingRunsDropped + ' entraînements. L’export contient tout ce qui est encore conservé.';
@@ -212,7 +214,7 @@
       target.innerHTML = welcomeHTML;
       $('welcome-name').textContent = state.identity.name;
       var noteNode = target.querySelector('.welcome-note');
-      if (state.model) noteNode.textContent = 'Votre modèle est entraîné. Les règles et vos souvenirs restent disponibles.';
+      if (state.model) noteNode.textContent = 'Votre modèle est entraîné. Vos souvenirs et les documents sélectionnés restent disponibles.';
     } else {
       // Keep the full trace in state and exports, limit DOM work on a small phone.
       var displayed = state.messages.slice(-100);
@@ -227,7 +229,22 @@
         if (message.role === 'assistant') {
           var detail = el('details', 'message-explanation'); detail.appendChild(el('summary', '', 'D’où vient cette réponse ?'));
           detail.appendChild(el('p', '', message.explanation || 'Réponse construite par le programme.'));
+          if (Array.isArray(message.citations) && message.citations.length) {
+            var references = el('ol', 'message-citations');
+            message.citations.forEach(function (citation, citationIndex) {
+              var item = el('li'), source = documentList().find(function (doc) { return doc.id === citation.documentId; });
+              item.appendChild(el('strong', '', (message.source === 'generation' ? '[S' + (citationIndex + 1) + '] ' : '') + citation.name + ' · ' + (!source ? 'page ou segment ' : source.kind === 'pdf' ? 'page ' : 'segment ') + citation.page));
+              item.appendChild(el('blockquote', '', citation.excerpt));
+              if (!source) item.appendChild(el('small', 'help-text', 'Référence conservée dans l’historique ; le document a été retiré.'));
+              references.appendChild(item);
+            });
+            detail.appendChild(references);
+          }
           if (message.score != null) detail.appendChild(el('p', '', 'Score de classement : ' + percent(message.score) + '. Il ne mesure pas la vérité de la réponse.'));
+          if (message.generation) {
+            detail.appendChild(el('p', '', 'Durée de la génération : ' + (message.generation.durationMs / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' s · ' + message.generation.inputTokens + ' jetons en entrée · ' + message.generation.outputTokens + ' jetons produits.'));
+            if (message.generation.finishReason === 'length') detail.appendChild(el('p', 'help-text', 'La limite de longueur a été atteinte. Demandez une suite ou une réponse plus courte.'));
+          }
           var original = displayed[index - 1];
           if (original && original.role === 'user' && original.text.length <= 500) {
             var learn = el('button', 'text-button', 'Utiliser ma demande comme exemple'); learn.type = 'button';
@@ -238,7 +255,64 @@
         target.appendChild(container);
       });
     }
+    renderGenerationDraft();
     if (scroll) requestAnimationFrame(function () { target.scrollTop = target.scrollHeight; });
+  }
+
+  function renderGenerationDraft() {
+    var target = $('chat-messages'), pending = $('generation-draft');
+    if (!generationDraft) { if (pending) pending.remove(); return; }
+    if (!pending) {
+      pending = el('div', 'generation-draft'); pending.id = 'generation-draft'; pending.setAttribute('aria-busy', 'true');
+      var question = el('article', 'chat-message user'); question.appendChild(el('div', 'message-header', 'Votre demande · en cours')); question.appendChild(el('div', 'message-bubble', generationDraft.question));
+      var response = el('article', 'chat-message assistant'); response.appendChild(el('div', 'message-header', state.identity.name + ' · rédaction locale en cours'));
+      var body = el('div', 'message-bubble'); body.id = 'generation-draft-text'; response.appendChild(body);
+      pending.appendChild(question); pending.appendChild(response); target.appendChild(pending);
+    }
+    var atEnd = target.scrollHeight - target.scrollTop - target.clientHeight < 90;
+    $('generation-draft-text').textContent = generationDraft.text || 'Lecture de la demande et des informations disponibles…';
+    if (atEnd) target.scrollTop = target.scrollHeight;
+  }
+  function renderGenerator(progress) {
+    if (!$('generator-panel')) return;
+    var status = Generator && Generator.status(), busy = Boolean(generatorController) || Boolean(status && status.busy);
+    $('generator-summary').textContent = !status || (!status.supported && !status.supportedFile) ? 'Rédaction expérimentale · indisponible' : status.ready ? 'Rédaction expérimentale · modèle prêt' : 'Rédaction expérimentale · modèle à préparer';
+    $('generator-prepare').disabled = busy || !status || !status.cachedSupported || status.ready || training;
+    $('generator-file-button').disabled = busy || !status || !(status.supportedFile || status.supported) || status.ready || training;
+    $('generator-prepare').textContent = status && status.cached ? 'Charger le modèle enregistré' : 'Préparer le modèle (491 Mo)';
+    $('generator-unload').hidden = !status || !status.ready;
+    $('generator-unload').disabled = busy;
+    $('generation-enabled').disabled = !status || !status.ready || busy;
+    $('generator-info').textContent = !status ? 'Le module de génération n’a pas été chargé.' : !status.supported && !status.supportedFile ? status.unsupportedReason : status.ready ? (status.storage === 'file' ? 'Fichier de modèle chargé pour cette session. Le calcul reste sur cet appareil ; vous choisirez le fichier de nouveau après fermeture.' : 'Le modèle est chargé. Vos demandes et les passages sélectionnés sont traités sur cet appareil.') : !status.cachedSupported ? 'Le stockage interne est indisponible. Vous pouvez charger le fichier GGUF conservé sur votre appareil.' : status.cached ? 'Le modèle est conservé sur cet appareil. Chargez-le pour rédiger des réponses.' : 'Préparation initiale : 491 Mo à télécharger, puis calcul local. Gardez cette page ouverte. Le temps et la mémoire nécessaires dépendent de l’appareil.';
+    $('generation-status-panel').hidden = !busy && !generationNotice;
+    $('generation-status-text').textContent = generationNotice || (progress && progress.message) || (status && status.progress && status.progress.message) || 'Préparation…';
+    $('generation-cancel').hidden = !generatorController;
+    $('generation-cancel').disabled = Boolean(generatorController && generatorController.signal.aborted);
+    var meter = $('generation-progress'); meter.hidden = !busy || Boolean(generationDraft);
+    if (progress && Number.isFinite(progress.progress)) { meter.value = progress.progress; $('generation-status-text').textContent += ' ' + Math.round(progress.progress * 100) + ' %'; } else meter.removeAttribute('value');
+    $('message-input').readOnly = Boolean(generationDraft);
+    $('send-button').disabled = busy || training || !$('message-input').value.trim();
+  }
+  function stopGeneration(invalidate) {
+    if (generatorController) generatorController.abort();
+    if (invalidate) { generationEpoch += 1; generatorController = null; generationDraft = null; generationNotice = ''; renderGenerationDraft(); }
+    else generationNotice = 'Arrêt en cours… Le calcul initial peut encore devoir se terminer.';
+    renderGenerator();
+  }
+  async function prepareGenerator(file) {
+    if (!Generator || generatorController || Generator.status().busy || training) return;
+    var controller = new AbortController(), epoch = ++generationEpoch;
+    generatorController = controller; generationNotice = ''; renderGenerator();
+    try {
+      await Generator.prepare({ file: file || undefined, signal: controller.signal, onProgress: function (value) {
+        if (epoch !== generationEpoch || controller.signal.aborted) return;
+        renderGenerator(value);
+      } });
+      if (epoch !== generationEpoch || controller.signal.aborted) return;
+      generationNotice = 'Modèle prêt. Pour un essai, activez les réponses générées dans le panneau. La génération peut être lente et inexacte.';
+    } catch (error) {
+      if (epoch === generationEpoch) generationNotice = controller.signal.aborted || error.name === 'AbortError' ? 'Préparation arrêtée. Vous pouvez la relancer.' : 'Préparation impossible : ' + error.message;
+    } finally { if (epoch === generationEpoch) generatorController = null; renderGenerator(); }
   }
   function renderExamples() {
     var target = $('example-list'); target.replaceChildren();
@@ -270,6 +344,7 @@
       var remove = el('button', 'icon-button'); remove.appendChild(icon('trash')); remove.setAttribute('aria-label', 'Supprimer le souvenir ' + fact.key);
       remove.addEventListener('click', async function () {
         if (!await confirmAction('Supprimer ce souvenir ?', '« ' + fact.key + ' = ' + fact.value + ' » sera retiré de la mémoire active. Sa trace peut rester dans la conversation, le journal et les exports précédents.', 'Supprimer')) return;
+        if (generationDraft) stopGeneration(true);
         state.facts = state.facts.filter(function (item) { return item.id !== fact.id; }); note('fact_deleted', 'user', 'Fait retiré de la mémoire active : ' + fact.key + ' = ' + fact.value + '.'); renderFacts(); renderStats(); save(); toast('Souvenir retiré de la mémoire active.');
       }); heading.appendChild(remove); card.appendChild(heading); card.appendChild(el('p', 'fact-value', fact.value));
       var footer = el('div', 'fact-footer'); footer.appendChild(el('span', '', 'Déclaré par vous')); footer.appendChild(el('span', '', date(fact.updatedAt))); card.appendChild(footer); target.appendChild(card);
@@ -310,6 +385,7 @@
       var unit = document.kind === 'pdf' ? 'page' : document.kind === 'image' ? 'image' : 'bloc';
       var examined = unit + (extraction.totalPages > 1 ? 's' : '') + ' examiné' + (unit === 'bloc' ? '' : 'e') + (extraction.totalPages > 1 ? 's' : '');
       body.appendChild(el('p', 'help-text', 'Extraction : ' + extraction.processedPages + ' / ' + extraction.totalPages + ' ' + examined + ' · ' + readablePages + ' ' + unit + (readablePages > 1 ? 's' : '') + ' avec du texte extrait. ' + (extraction.truncated ? 'Lecture partielle : le document n’a pas été lu intégralement.' : 'Le texte extrait peut comporter des erreurs.')));
+      if (Number.isFinite(extraction.ocrDurationMs)) body.appendChild(el('p', 'help-text', 'Durée de l’OCR : ' + (extraction.ocrDurationMs / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' s. Reconnaissance du texte uniquement, hors chargement et préparation du lecteur.'));
       if (extraction.warnings && extraction.warnings.length) {
         var warnings = el('ul', 'document-warnings'); extraction.warnings.forEach(function (warning) { warnings.appendChild(el('li', '', warning)); }); body.appendChild(warnings);
       }
@@ -338,6 +414,7 @@
       var row = el('article', 'document-item'), header = el('div', 'document-item-heading'), label = el('label', 'document-select');
       var checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = selectedDocumentIds.has(document.id); checkbox.setAttribute('aria-label', 'Utiliser ' + document.name + ' pour la recherche');
       checkbox.addEventListener('change', function () {
+        if (generationDraft) stopGeneration(true);
         if (this.checked) selectedDocumentIds.add(document.id); else selectedDocumentIds.delete(document.id);
         renderDocumentSelection(); note('document_selection', 'user', 'Documents sélectionnés pour les prochaines recherches : ' + selectedDocuments().join(', ')); save();
       });
@@ -346,14 +423,21 @@
       remove.addEventListener('click', async function () {
         if (!await confirmAction('Retirer ce document ?', '« ' + document.name + ' » et son texte extrait seront retirés de cet atelier. Des passages peuvent rester dans la conversation et vos exports précédents. Le fichier d’origine sur votre appareil ne sera pas modifié.', 'Retirer')) return;
         try {
+          if (generationDraft) stopGeneration(true);
           Core.removeDocument(state, document.id); selectedDocumentIds.delete(document.id); renderDocuments(); var saved = await save();
           if (documentList().some(function (item) { return item.id === document.id; })) { documentFeedback('Le retrait a été annulé pour conserver une sauvegarde restaurable.', true); return; }
+          renderChat(false);
           toast(saved ? 'Document retiré de cet atelier.' : 'Document retiré dans cette session. Exportez votre travail avant de fermer.');
         }
         catch (error) { documentFeedback(error.message, true); }
       }); header.appendChild(remove); row.appendChild(header);
       var characters = document.pages.reduce(function (total, page) { return total + page.text.length; }, 0);
       row.appendChild(el('p', 'document-meta', fileSize(document.size) + ' · ' + characters.toLocaleString('fr-FR') + ' caractères extraits' + (document.extraction.truncated ? ' · lecture partielle' : '')));
+      if (document.extraction.truncated && Core.refreshDocument) {
+        var refresh = el('button', 'button button-small', 'Compléter la lecture'); refresh.type = 'button';
+        refresh.disabled = Boolean(documentImportController); refresh.setAttribute('aria-label', 'Reprendre la lecture de l’original conservé : ' + document.name);
+        refresh.addEventListener('click', function () { refreshDocument(document.id); }); row.appendChild(refresh);
+      }
       if (document.extraction.warnings && document.extraction.warnings.length) row.appendChild(el('p', 'document-warning-summary', document.extraction.warnings.length + (document.extraction.warnings.length > 1 ? ' remarques d’extraction à consulter dans l’aperçu.' : ' remarque d’extraction à consulter dans l’aperçu.')));
       row.appendChild(documentPreview(document)); target.appendChild(row);
     });
@@ -372,6 +456,7 @@
   }
   async function importDocuments(files) {
     if (documentImportController || !files || !files.length) return;
+    if (generationDraft) stopGeneration(true);
     if (!Docs || typeof Docs.importFile !== 'function') { documentFeedback('Le module de lecture est indisponible. Rechargez POI avec une connexion, puis réessayez.', true); return; }
     var selectedFiles = Array.from(files); $('document-input').value = '';
     if (documentList().length + selectedFiles.length > DOCUMENT_LIMITS.count) { documentFeedback('Vous pouvez conserver 6 documents au maximum. Retirez un document ou choisissez moins de fichiers avant de recommencer.', true); return; }
@@ -409,6 +494,39 @@
         if (problems.length) message += '\n' + problems.join('\n');
         if (lastStorageError) message += '\nEnregistrement local indisponible : exportez votre travail avant de fermer.';
         documentFeedback(message, Boolean(problems.length || lastStorageError));
+      }
+    }
+  }
+  async function refreshDocument(documentId) {
+    if (documentImportController || !Docs || !Core.refreshDocument) return;
+    if (generationDraft) stopGeneration(true);
+    var original = documentList().find(function (doc) { return doc.id === documentId; });
+    if (!original) return;
+    var controller = new AbortController(), generation = ++documentImportGeneration;
+    documentImportController = controller; $('document-import-status').hidden = false; $('cancel-document-import').disabled = false;
+    $('document-progress-text').textContent = original.name + ' · Reprise de la lecture…'; $('document-progress').removeAttribute('value'); documentFeedback(''); renderDocuments();
+    try {
+      var file = new File([Docs.documentBlob(original)], original.name, { type: original.mime });
+      var refreshed = await Docs.importFile(file, { signal: controller.signal, onProgress: function (progress) {
+        if (generation !== documentImportGeneration || controller.signal.aborted) return;
+        $('document-progress-text').textContent = original.name + ' · ' + (progress.message || 'Lecture en cours…');
+        if (Number.isFinite(progress.progress)) $('document-progress').value = progress.progress; else $('document-progress').removeAttribute('value');
+      } });
+      if (controller.signal.aborted || generation !== documentImportGeneration) return;
+      $('cancel-document-import').disabled = true;
+      Core.refreshDocument(state, documentId, refreshed);
+      var saved = await save(), current = documentList().find(function (doc) { return doc.id === documentId; });
+      if (controller.signal.aborted || generation !== documentImportGeneration) return;
+      if (!current || JSON.stringify(current.pages) !== JSON.stringify(refreshed.pages)) throw new Error('La nouvelle lecture n’a pas été conservée. Le précédent état reste disponible.');
+      var characters = current.pages.reduce(function (total, page) { return total + page.text.length; }, 0);
+      var message = original.name + ' : ' + characters.toLocaleString('fr-FR') + ' caractères disponibles. ' + (current.extraction.truncated ? 'La lecture reste partielle ; consultez les remarques dans l’aperçu.' : 'Lecture terminée.');
+      if (!saved) message += ' Exportez votre travail avant de fermer : l’enregistrement local est indisponible.';
+      documentFeedback(message, !saved);
+    } catch (error) {
+      if (generation === documentImportGeneration) documentFeedback(controller.signal.aborted || error.name === 'AbortError' ? 'Lecture arrêtée. Le document précédemment conservé reste disponible.' : error.message, !controller.signal.aborted);
+    } finally {
+      if (generation === documentImportGeneration) {
+        documentImportController = null; $('document-import-status').hidden = true; $('cancel-document-import').disabled = false; renderDocuments();
       }
     }
   }
@@ -474,17 +592,46 @@
     $('adopt-button').disabled = false;
     $('adopt-button').textContent = regression ? 'Examiner et adopter' : 'Adopter cette version';
   }
-  function renderAll() { renderStats(); renderChat(true); renderExamples(); renderFacts(); renderDocuments(); renderIdentity(); renderHistory(); renderCandidate(); renderStorage(); }
+  function renderAll() { renderStats(); renderChat(true); renderExamples(); renderFacts(); renderDocuments(); renderIdentity(); renderHistory(); renderCandidate(); renderStorage(); renderGenerator(); }
 
   async function sendMessage(text) {
-    if (training || !text.trim()) return;
+    if (training || generatorController || (Generator && Generator.status().busy) || !text.trim()) return;
+    text = text.trim();
+    var epoch = generationEpoch, controller = null;
     try {
-      Core.reply(state, text.trim(), { documentIds: selectedDocuments() }); $('message-input').value = ''; $('message-count').textContent = '0'; $('message-input').style.height = ''; $('send-button').disabled = true;
-      renderChat(true); renderStats(); renderFacts(); save();
-    } catch (error) { toast(error.message); }
+      var documentIds = selectedDocuments(), options = { documentIds: documentIds };
+      var preview = Core.previewMessage(state, text, options);
+      if (Generator && GenerationContext && Generator.status().ready && $('generation-enabled').checked && preview.source !== 'rule' && preview.source !== 'memory' && preview.intent !== 'recall') {
+        var context = GenerationContext.build({ documents: documentList(), documentIds: documentIds, query: text, messages: state.messages, identity: state.identity, facts: state.facts }, { maxCharacters: Generator.LIMITS.contextCharacters });
+        controller = new AbortController(); epoch = ++generationEpoch; generatorController = controller;
+        // The live stream is only a draft. Core commits both messages after completion.
+        $('message-input').value = text; $('message-count').textContent = text.length.toLocaleString('fr-FR');
+        generationDraft = { question: text, text: '' }; generationNotice = 'Réponse calculée sur cet appareil…'; renderChat(true); renderGenerator();
+        var result = await Generator.generate({ prompt: text, context: context, signal: controller.signal, onProgress: function (value) {
+          if (epoch !== generationEpoch || controller.signal.aborted) return;
+          generationNotice = value.message; renderGenerator();
+        }, onToken: function (value) {
+          if (epoch !== generationEpoch || controller.signal.aborted || !generationDraft) return;
+          generationDraft.text = value;
+          if (generationFrame === null) generationFrame = requestAnimationFrame(function () { generationFrame = null; renderGenerationDraft(); });
+        } });
+        if (epoch !== generationEpoch || controller.signal.aborted) return;
+        Core.handleGeneratedMessage(state, text, result, { documentIds: documentIds, contextCitations: context.citations });
+        generatorController = null;
+        generationDraft = null; generationNotice = 'Réponse rédigée localement en ' + (result.generation.durationMs / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' s. Vous pouvez consulter les passages fournis dans son explication.';
+      } else Core.reply(state, text, options);
+      $('message-input').value = ''; $('message-count').textContent = '0'; $('message-input').style.height = '';
+      renderChat(true); renderStats(); renderFacts(); renderGenerator(); await save();
+    } catch (error) {
+      if (epoch === generationEpoch) {
+        generationDraft = null;
+        generationNotice = controller && controller.signal.aborted || error.name === 'AbortError' ? 'Réponse arrêtée. Votre question reste dans le brouillon.' : 'Réponse non enregistrée : ' + error.message;
+        renderChat(false); toast(generationNotice);
+      }
+    } finally { if (epoch === generationEpoch) generatorController = null; renderGenerator(); }
   }
   async function trainModel() {
-    if (training) return;
+    if (training || generatorController || (Generator && Generator.status().busy)) return;
     if (candidate && !await confirmAction('Remplacer l’essai en attente ?', 'L’essai actuel sera marqué comme écarté. Il restera documenté dans l’export.', 'Nouvel essai')) return;
     if (candidate) discardCandidate('Écartée pour préparer un autre essai.');
     training = true; $('train-button').disabled = true; $('train-button').textContent = 'Apprentissage en cours…'; $('training-status').textContent = 'Le calcul se fait sur cet appareil. Gardez cette page ouverte.';
@@ -514,7 +661,7 @@
     var blob = new Blob([content], { type: mime }), url = URL.createObjectURL(blob), link = document.createElement('a');
     link.href = url; link.download = filename; link.style.display = 'none'; document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
-  function exportContext() { return { createdAt: now(), appVersion: APP_VERSION, coreVersion: Core.VERSION, display: { preference: $('theme-choice').value, effective: document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') }, selfTests: selfTests, evaluation: evaluation, evaluationAt: evaluationAt, evaluationModelVersion: evaluationModelVersion, offline: clone(offline), storage: { mode: storageMode, lastSavedAt: lastSavedAt, lastError: lastStorageError, writeBlocked: writeBlocked }, userAgent: navigator.userAgent, language: navigator.language, platform: navigator.platform, limits: Core.LIMITS }; }
+  function exportContext() { return { createdAt: now(), appVersion: APP_VERSION, coreVersion: Core.VERSION, display: { preference: $('theme-choice').value, effective: document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') }, selfTests: selfTests, evaluation: evaluation, evaluationAt: evaluationAt, evaluationModelVersion: evaluationModelVersion, offline: clone(offline), generation: Generator ? Generator.status() : null, storage: { mode: storageMode, lastSavedAt: lastSavedAt, lastError: lastStorageError, writeBlocked: writeBlocked }, userAgent: navigator.userAgent, language: navigator.language, platform: navigator.platform, limits: Core.LIMITS }; }
   function exportComplete() {
     if (exporting || training) return;
     exporting = true;
@@ -532,7 +679,7 @@
       var content = await file.text(), restored = Core.importState(content);
       var message = restored.messages.length + ' messages, ' + restored.facts.length + ' souvenirs, ' + restored.examples.length + ' exemples et ' + (restored.documents || []).length + ' documents seront restaurés.\n\nL’état actuel sera remplacé. Exportez-le d’abord si vous souhaitez le conserver.';
       if (!await confirmAction('Restaurer cette sauvegarde ?', message, 'Remplacer et restaurer')) return;
-      stopDocumentImport(true); selectedDocumentIds.clear(); documentFeedback('');
+      stopGeneration(true); stopDocumentImport(true); selectedDocumentIds.clear(); documentFeedback('');
       state = restored; candidate = null; evaluation = null; evaluationAt = null; evaluationModelVersion = null; selfTests = null; writeBlocked = false; warn('');
       note('backup_restored', 'user', 'Sauvegarde validée puis restaurée depuis le fichier ' + file.name + '.');
       renderAll(); $('evaluation-result').textContent = 'Aucune évaluation lancée dans cette session.'; $('selftest-results').textContent = 'Aucun contrôle exécuté dans cette session.';
@@ -585,6 +732,18 @@
     document.querySelectorAll('[data-prompt]').forEach(function (button) { button.addEventListener('click', function () { sendMessage(button.dataset.prompt); }); });
     window.addEventListener('hashchange', function () { navigate(location.hash.slice(1), false); });
     $('chat-form').addEventListener('submit', function (event) { event.preventDefault(); sendMessage($('message-input').value); });
+    $('generator-prepare').addEventListener('click', function () { prepareGenerator(); });
+    $('generator-file-button').addEventListener('click', function () { $('generator-file-input').click(); });
+    $('generator-file-input').addEventListener('change', function () { var file = this.files[0]; this.value = ''; if (file) prepareGenerator(file); });
+    $('generation-cancel').addEventListener('click', function () { stopGeneration(false); });
+    $('generator-unload').addEventListener('click', async function () {
+      if (generatorController || !Generator || Generator.status().busy) return;
+      var fileMode = Generator.status().storage === 'file', unloading = Generator.unload(); renderGenerator();
+      try { await unloading; generationNotice = fileMode ? 'Modèle retiré de la mémoire vive. Choisissez de nouveau votre fichier pour le recharger.' : 'Modèle retiré de la mémoire vive. Sa copie téléchargée est conservée sur cet appareil.'; }
+      catch (error) { generationNotice = error.message; }
+      renderGenerator();
+    });
+    $('generation-enabled').addEventListener('change', function () { generationNotice = this.checked ? 'Les questions ouvertes utiliseront le modèle chargé.' : 'Rédaction désactivée. Les réponses par règles, mémoire et recherche restent disponibles.'; renderGenerator(); });
     $('attach-button').addEventListener('click', function () {
       if (documentList().length >= DOCUMENT_LIMITS.count) { $('documents-panel').open = true; documentFeedback('Les 6 emplacements sont utilisés. Retirez un document pour en joindre un autre.', true); return; }
       documentFeedback('Les modules PDF, Word et OCR se téléchargent à la première utilisation. Les textes déjà extraits restent accessibles hors ligne. Aucun contenu de vos fichiers n’est envoyé.');
@@ -592,10 +751,11 @@
     });
     $('document-input').addEventListener('change', function () { importDocuments(this.files).catch(function (error) { documentFeedback('Importation impossible : ' + error.message, true); }); });
     $('cancel-document-import').addEventListener('click', function () { stopDocumentImport(false); });
-    $('message-input').addEventListener('input', function () { var chat = $('chat-messages'), wasAtEnd = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 24; $('message-count').textContent = this.value.length.toLocaleString('fr-FR'); this.style.height = 'auto'; this.style.height = Math.min(200, Math.max(28, this.scrollHeight)) + 'px'; $('send-button').disabled = !this.value.trim(); if (wasAtEnd) requestAnimationFrame(function () { chat.scrollTop = chat.scrollHeight; }); });
+    $('message-input').addEventListener('input', function () { var chat = $('chat-messages'), wasAtEnd = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 24; $('message-count').textContent = this.value.length.toLocaleString('fr-FR'); this.style.height = 'auto'; this.style.height = Math.min(200, Math.max(28, this.scrollHeight)) + 'px'; renderGenerator(); if (wasAtEnd) requestAnimationFrame(function () { chat.scrollTop = chat.scrollHeight; }); });
     $('message-input').addEventListener('keydown', function (event) { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && window.matchMedia('(min-width:701px)').matches) { event.preventDefault(); sendMessage(this.value); } });
     $('clear-chat').addEventListener('click', async function () {
       if (!await confirmAction('Effacer la conversation ?', 'Les messages seront retirés de l’état actif. Vos souvenirs et votre modèle seront conservés. Des traces de ces échanges peuvent rester dans le journal et vos anciens exports.', 'Effacer les messages')) return;
+      stopGeneration(true);
       var count = state.messages.length; state.messages = []; note('conversation_cleared', 'user', 'Suppression volontaire de ' + count + ' messages de la conversation active.'); renderChat(false); renderStats(); save();
     });
     $('example-form').addEventListener('submit', async function (event) {
@@ -618,11 +778,12 @@
     $('memory-form').addEventListener('submit', function (event) {
       event.preventDefault(); var key = $('fact-key').value.trim(), value = $('fact-value').value.trim();
       if (!key || !value || /[=\r\n]/.test(key) || /[\r\n]/.test(value)) { toast('Utilisez un sujet et une valeur sur une seule ligne, sans signe = dans le sujet.'); return; }
-      try { var response = Core.handleMessage(state, 'Retiens : ' + key + ' = ' + value); if (response.source !== 'memory') { toast(response.text); renderChat(false); save(); return; } $('memory-form').reset(); renderFacts(); renderChat(false); renderStats(); save(); toast('Souvenir enregistré. L’opération figure aussi dans la conversation.'); }
+      try { if (generationDraft) stopGeneration(true); var response = Core.handleMessage(state, 'Retiens : ' + key + ' = ' + value); if (response.source !== 'memory') { toast(response.text); renderChat(false); save(); return; } $('memory-form').reset(); renderFacts(); renderChat(false); renderStats(); save(); toast('Souvenir enregistré. L’opération figure aussi dans la conversation.'); }
       catch (error) { toast(error.message); }
     });
     $('identity-form').addEventListener('submit', function (event) {
       event.preventDefault(); var name = $('agent-name').value.trim(), role = $('agent-role').value.trim(), userName = $('user-name').value.trim(); if (!name || !role) return;
+      if (generationDraft) stopGeneration(true);
       var before = clone(state.identity); state.identity = { name: name, role: role, userName: userName }; note('identity_changed', 'user', 'Identité précédente : ' + JSON.stringify(before) + '. Nouvelle identité : ' + JSON.stringify(state.identity) + '.'); renderChat(false); renderStats(); save(); toast('Identité enregistrée. Les capacités techniques restent les mêmes.');
     });
     $('train-button').addEventListener('click', trainModel);
@@ -677,15 +838,15 @@
     $('offline-retry').addEventListener('click', prepareOffline);
     $('reset-button').addEventListener('click', async function () {
       if (!await confirmAction('Réinitialiser tout l’atelier ?', 'Les conversations, souvenirs, exemples ajoutés, modèles, historique et documents joints locaux, avec leurs fichiers et textes extraits, seront effacés de cet atelier. Les fichiers d’origine sur votre appareil ne seront pas modifiés. Les exemples de départ seront rétablis. Exportez d’abord si vous souhaitez conserver votre travail.', 'Tout réinitialiser')) return;
-      stopDocumentImport(true); selectedDocumentIds.clear(); documentFeedback('');
+      stopGeneration(true); stopDocumentImport(true); selectedDocumentIds.clear(); documentFeedback('');
       state = Core.createState(); candidate = null; evaluation = null; evaluationAt = null; evaluationModelVersion = null; selfTests = null; writeBlocked = false; warn(''); note('workshop_reset', 'user', 'Nouvel état vide après réinitialisation volontaire.');
       renderAll(); $('evaluation-result').textContent = 'Aucune évaluation lancée dans cette session.'; $('selftest-results').textContent = 'Aucun contrôle exécuté dans cette session.'; await save(); navigate('conversation', true); toast('Atelier réinitialisé.');
     });
     $('modal-cancel').addEventListener('click', function () { closeModal(false); }); $('modal-confirm').addEventListener('click', function () { closeModal(true); });
     $('modal-backdrop').addEventListener('click', function (event) { if (event.target === this) closeModal(false); });
     if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', function () { prepareOffline(); });
-    window.addEventListener('pagehide', function () { stopDocumentImport(true); releaseDocumentPreviews(); });
-    window.addEventListener('pageshow', function (event) { if (event.persisted && state) renderDocuments(); });
+    window.addEventListener('pagehide', function () { stopGeneration(true); if (Generator) Generator.unload().catch(function () {}); stopDocumentImport(true); releaseDocumentPreviews(); });
+    window.addEventListener('pageshow', function (event) { if (event.persisted && state) { renderDocuments(); renderGenerator(); } });
     document.addEventListener('keydown', function (event) { if ($('modal-backdrop').hidden) return; if (event.key === 'Escape') { event.preventDefault(); closeModal(false); } if (event.key === 'Tab') { var a = $('modal-cancel'), b = $('modal-confirm'); if (event.shiftKey && document.activeElement === a) { event.preventDefault(); b.focus(); } else if (!event.shiftKey && document.activeElement === b) { event.preventDefault(); a.focus(); } } });
   }
 

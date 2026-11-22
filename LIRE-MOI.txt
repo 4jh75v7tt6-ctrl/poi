@@ -1,12 +1,41 @@
-POI 0.2.0 — ATELIER D’IA LOCAL
+POI 0.3.0 — ATELIER D’IA LOCAL
 
 Adresse actuelle : https://4jh75v7tt6-ctrl.github.io/poi/
-Application 0.2.0 ; moteur 1.1.0 ; exporteur 0.2.0 ; documents 1.0.0.
+Application 0.3.0 ; moteur 1.3.0 ; exporteur 0.3.0 ; documents 1.1.0.
 
 Cette archive contient le code de l’application, ses icônes, son guide et ses
 dépendances locales. Elle ne contient aucune donnée personnelle utilisateur.
 Pour sauvegarder vos conversations et pièces jointes, faites séparément un
 « Exporter le dossier complet » dans l’onglet Atelier de POI.
+
+RÉDIGER UNE RÉPONSE AVEC LE MODÈLE LOCAL
+
+Conversation → Rédaction locale → Préparer le modèle (491 Mo).
+Gardez la page ouverte pendant le téléchargement, la vérification et le
+chargement. Qwen2.5 0.5B Instruct fonctionne ensuite sur l’appareil, sans API
+payante ni envoi des données. Après une réouverture, la même commande charge
+la copie conservée ; une copie complète peut être chargée hors ligne.
+Si le cache interne échoue faute d’espace, téléchargez le fichier officiel
+proposé dans le panneau, conservez-le dans Fichiers et touchez Charger un
+fichier GGUF. Il est vérifié puis lu localement sans recopie dans le cache.
+Il faudra le choisir à chaque session ; le runtime doit déjà être conservé
+pour charger ce fichier en mode avion. La mémoire vive reste nécessaire.
+La génération reste désactivée par défaut : activez explicitement
+« Essayer les réponses générées — expérimental ». Les essais ont montré
+des réponses lentes et parfois mal formulées ; la qualité reste à vérifier.
+Les demandes ouvertes et documentaires utilisent le modèle s’il est prêt et
+activé. Les commandes explicites de mémoire restent traitées directement.
+
+Le modèle reçoit une sélection bornée des données (2 000 caractères au plus)
+et peut produire jusqu’à 384 jetons. Il ne reçoit pas un livre entier à chaque
+question. Ses réponses peuvent être inexactes ; consultez les passages [S1],
+[S2] et la durée de génération dans « D’où vient cette réponse ? ».
+Arrêter garde la question dans le brouillon sans enregistrer de réponse
+incomplète. L’arrêt peut attendre la fin du calcul initial du contexte.
+
+L’utilisation de la version précédente sur l’iPhone physique et en mode
+avion est confirmée par l’utilisateur. Les performances de ce nouveau
+modèle et son rechargement hors ligne restent à mesurer sur cet appareil.
 
 INSTALLER SUR IPHONE
 
@@ -44,28 +73,46 @@ pendant le calcul. Une baisse d’évaluation doit être examinée avant adoptio
 JOINDRE ET LIRE
 
 Dans Conversation : Joindre → choisir un fichier → attendre la lecture →
-cocher les documents à utiliser. Exemples de demandes : « Fais une fiche
-de lecture » ou « Recherche les passages sur la mémoire ».
+cocher les documents à utiliser. Poser une question précise sur le contenu,
+ou demander « Résume ce document », « Analyse le vocabulaire » ou
+« Recherche les passages sur la mémoire ».
 
 Formats : TXT, Markdown, CSV, JSON, HTML, PDF, DOCX, PNG, JPEG et WebP.
-Une fiche rassemble des extraits cités et des mots récurrents. Les photos
-sont lues par reconnaissance du texte en français ; POI ne décrit pas une
-scène et ne réalise pas une analyse générale d’un livre. Vérifiez les erreurs
-OCR et les avertissements. Les documents ne servent pas automatiquement
-d’exemples d’apprentissage.
+Sans générateur, une réponse factuelle sélectionne des phrases sources,
+un résumé retient des phrases et une analyse fournit des mesures lexicales.
+Avec le modèle chargé, POI peut rédiger et reformuler ces informations.
+Les photos sont lues par reconnaissance du texte en français ; POI ne
+décrit pas une scène et ne réalise pas une interprétation littéraire.
+La durée de l’OCR est mesurée hors chargement et préparation du lecteur
+lors des nouvelles lectures OCR, puis conservée dans l’aperçu et l’export.
+Vérifiez les erreurs OCR et les avertissements. Les documents ne servent
+pas automatiquement d’exemples d’apprentissage.
 
 Limites : 6 documents ; 8 Mio par original ; 12 Mio d’originaux au total ;
-600 000 caractères extraits par document ; 200 premières pages PDF ;
+1 200 000 caractères extraits par document ; 200 premières pages PDF ;
 3 pages OCR par PDF ; images de 24 mégapixels au maximum ; sauvegarde
 restaurable complète de 25 Mio. Une lecture partielle est signalée. Une
 page non lue ne peut pas fournir de passage à une réponse.
 
+Pour un ancien document partiel, « Compléter la lecture » reprend son
+original conservé avec la nouvelle limite. L’original et les échanges restent
+conservés. Les anciennes sauvegardes et les modèles restent restaurables.
+
+Vous pouvez poser « Quelle est ma couleur préférée ? » après « Retiens :
+couleur préférée = bleu », ou demander « Que sais-tu sur moi ? ». Ces
+réponses et la lecture documentaire fonctionnent sans entraînement.
+POI peut manquer un synonyme ou sélectionner une phrase insuffisante.
+Le générateur optionnel apporte la rédaction libre, avec les limites de
+précision et de contexte d’un petit modèle.
+
 SAUVEGARDER VOS DONNÉES
 
 Atelier → Exporter le dossier complet produit un ZIP personnel contenant
-18 fichiers de base et 2 fichiers supplémentaires par document : original
+19 fichiers de base et 2 fichiers supplémentaires par document : original
 et texte extrait. Le rapport, les tableaux, les paramètres et le journal
 accompagnent sauvegarde-poi.json, qui permet la restauration complète.
+Les poids préentraînés de 491 Mo ne sont pas inclus ; leurs références sont
+conservées dans le rapport pour retrouver la même version.
 
 Dans Fichiers sur iPhone, ouvrez ce ZIP pour l’extraire. Dans POI, choisissez
 Restaurer une sauvegarde puis sauvegarde-poi.json. La restauration remplace
