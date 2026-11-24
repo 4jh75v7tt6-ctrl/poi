@@ -1,0 +1,23 @@
+<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>POI · apprentissage des consignes Work</title>
+<style>body{font:16px system-ui;max-width:760px;margin:2rem auto;padding:0 1rem;background:#18191d;color:#eee}label{display:block;margin:1rem 0}input,select,textarea,button{font:inherit;padding:.6rem;background:#292c33;color:#fff;border:1px solid #777;border-radius:.4rem}textarea{width:95%;min-height:5rem}button{margin:.3rem}output{display:block;white-space:pre-wrap;padding:1rem;background:#292c33}a{color:#8bc3ff}</style>
+<h1>Apprentissage des consignes Work</h1>
+<p>Les corrections sont conservées dans ce navigateur. Exportez le corpus après chaque séance pour poursuivre sur plusieurs jours et le transmettre au futur moteur natif de POI. Le classifieur de cette page propose une intention ; il n'exécute aucune action.</p>
+<label>Identifiant du Work <input id="work" placeholder="Work ou dossier concerné"></label>
+<label>Consigne exacte <textarea id="text" placeholder="Enregistre le résultat dans ce Work"></textarea></label>
+<label>Intention validée <select id="intent"><option value="save">Enregistrer</option><option value="modify">Modifier</option><option value="tell">Dire / expliquer</option><option value="search">Chercher</option><option value="correct">Corriger</option><option value="create_component">Créer une composante</option><option value="document_watch">Veille documentaire</option><option value="unknown">Inconnue / refus</option></select></label>
+<label>Usage <select id="split"><option value="train">Entraînement</option><option value="test">Contrôle réservé</option></select></label>
+<button id="add">Valider la correction</button><button id="export">Exporter le corpus JSON</button>
+<label>Importer un corpus existant ou un lot de corrections JSON <input id="import" type="file" accept="application/json,.json"></label>
+<button id="check">Mesurer les contrôles réservés</button><button id="try">Tester la consigne sans l'exécuter</button>
+<output id="status" role="status"></output>
+<script src="work-language.js"></script><script>
+(function(){'use strict';var api=POIWorkLanguage,key='poi-work-language-v1',data=api.empty(),out=document.getElementById('status');
+function show(s){out.textContent=s}function save(){localStorage.setItem(key,JSON.stringify(data));show(data.records.length+' corrections enregistrées localement. Exportez pour conserver une copie.');}
+try{var stored=localStorage.getItem(key);if(stored)data=api.validate(JSON.parse(stored));show(data.records.length+' corrections disponibles.');}catch(e){show('Stockage local indisponible : exportez votre corpus avant de fermer. '+e.message)}
+document.getElementById('add').onclick=function(){try{var text=document.getElementById('text').value,record={id:'work-'+Date.now()+'-'+Math.random().toString(36).slice(2,9),text:text,intent:document.getElementById('intent').value,workId:document.getElementById('work').value,source:'user_correction',createdAt:new Date().toISOString(),split:document.getElementById('split').value};data=api.merge(data,{schema:api.SCHEMA,records:[record]});save()}catch(e){show(e.message)}};
+document.getElementById('import').onchange=async function(e){try{var file=e.target.files[0];if(!file||file.size>5000000)throw Error('Fichier absent ou trop volumineux.');var incoming=JSON.parse(await file.text());data=api.merge(data,incoming);save()}catch(error){show('Import refusé : '+error.message)}e.target.value=''};
+document.getElementById('export').onclick=function(){try{var blob=new Blob([JSON.stringify(api.validate(data),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='POI_WORK_LANGAGE_CORRECTIONS_V1.json';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);show('Corpus exporté : '+data.records.length+' corrections.')}catch(e){show(e.message)}};
+document.getElementById('check').onclick=function(){var r=api.evaluate(data);show(r.total?r.correct+'/'+r.total+' contrôles réservés réussis.\n'+r.results.filter(function(x){return !x.correct}).map(function(x){return x.id+' : attendu '+x.expected+', obtenu '+x.predicted}).join('\n'):'Aucun contrôle réservé : ajoutez des formulations de test distinctes.')};
+document.getElementById('try').onclick=function(){show(JSON.stringify(api.predict(data,document.getElementById('text').value),null,2))};
+}());</script></html>
