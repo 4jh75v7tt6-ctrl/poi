@@ -1,0 +1,188 @@
+<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="poi-app" content="local-v1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="POI Work">
+<link rel="manifest" href="./work-manifest.webmanifest">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<title>POI · apprentissage des consignes Work</title>
+<style>body{font:16px system-ui;max-width:760px;margin:2rem auto;padding:0 1rem;background:#18191d;color:#eee}label{display:block;margin:1rem 0}input,select,textarea,button{font:inherit;padding:.6rem;background:#292c33;color:#fff;border:1px solid #777;border-radius:.4rem}textarea{width:95%;min-height:5rem}button{margin:.3rem}output{display:block;white-space:pre-wrap;padding:1rem;background:#292c33}a{color:#8bc3ff}</style>
+<h1>Apprentissage des consignes Work</h1>
+<p>Importez les consignes préparées dans l’atelier d’IA, vérifiez les intentions proposées et validez le lot pour mesurer les contrôles réservés.</p>
+<p><a href="./index.html">Ouvrir l’atelier d’IA</a> · <a href="scriptable:///run/POI_Work_iCloud" data-poi-native-link>Ouvrir avec sauvegarde iCloud</a></p>
+<div id="poi-icloud-status" role="status">Conservation locale dans ce navigateur.</div>
+<label>Importer un corpus ou un transfert Work <input id="import" type="file" accept="application/json,.json"></label>
+<section id="pending" hidden>
+  <h2>Consignes à vérifier</h2>
+  <p id="pending-summary"></p>
+  <ol id="preview"></ol>
+  <button id="review">Valider le lot et mesurer</button>
+</section>
+<label>Identifiant du Work <input id="work" placeholder="Work ou dossier concerné"></label>
+<label>Consigne exacte <textarea id="text" placeholder="Enregistre le résultat dans ce Work"></textarea></label>
+<label>Intention validée <select id="intent"><option value="save">Enregistrer</option><option value="modify">Modifier</option><option value="tell">Dire / expliquer</option><option value="search">Chercher</option><option value="correct">Corriger</option><option value="create_component">Créer une composante</option><option value="document_watch">Veille documentaire</option><option value="unknown">Inconnue / refus</option></select></label>
+<label>Usage <select id="split"><option value="train">Entraînement</option><option value="test">Contrôle réservé</option></select></label>
+<button id="add">Valider la correction</button><button id="export">Exporter le corpus JSON</button>
+<button id="check">Mesurer les contrôles réservés</button><button id="try">Tester la consigne sans l’exécuter</button>
+<button id="export-report">Exporter les résultats JSON</button>
+<output id="status" role="status"></output>
+<script src="./work-language.js"></script>
+<script src="./poi-icloud.js"></script>
+<script>
+(function () {
+  'use strict';
+  const api = window.POIWorkLanguage;
+  const corpusKey = 'poi-work-language-v1';
+  const transferKey = 'poi-work-transfer-v1';
+  const reportKey = 'poi-work-diagnostic-v1';
+  const el = (id) => document.getElementById(id);
+  const show = (message) => { el('status').textContent = message; };
+  const labels = Object.fromEntries(Array.from(el('intent').options, option => [option.value, option.text]));
+  let pending = null, pendingRaw = null;
+  function readCorpus() {
+    const raw = localStorage.getItem(corpusKey);
+    return raw === null ? api.empty() : api.validate(JSON.parse(raw));
+  }
+  function defaultWork(corpus) {
+    const choices = [...new Set(corpus.records.map(record => record.workId).filter(Boolean))];
+    return choices.length === 1 ? choices[0] : '';
+  }
+  function makeReport(corpus, trial) {
+    return {schema:'poi.work-diagnostic.v1', createdAt:new Date().toISOString(),
+      records:corpus.records.length, evaluation:api.evaluate(corpus), trial:trial || null};
+  }
+  function describe(report) {
+    const result = report.evaluation;
+    const summary = report.records + ' consigne(s) enregistrée(s). ' +
+      (result.total ? result.correct + '/' + result.total + ' contrôles réservés réussis.' : 'Aucun contrôle réservé mesurable.');
+    const details = result.results.filter(row => !row.correct).map(row =>
+      '« ' + row.text + ' » — attendu : ' + labels[row.expected] + ', obtenu : ' + (labels[row.predicted] || 'refus'));
+    if (result.excluded.length) details.push(result.excluded.length + ' contrôle(s) exclu(s) pour doublon.');
+    return [summary, ...details].join('\n');
+  }
+  function preview() {
+    el('pending').hidden = !pending;
+    if (!pending) return;
+    const corpus = readCorpus();
+    const work = el('work').value.trim() || defaultWork(corpus);
+    const plan = api.planTransfer(corpus, pending, work, new Date().toISOString());
+    const count = plan.added.length;
+    el('pending-summary').textContent = count + ' proposition(s) à valider, ' + plan.existing +
+      ' déjà présente(s). Work : ' + (plan.workId || 'général') + '.';
+    const list = document.createDocumentFragment();
+    for (const row of plan.added) {
+      const item = document.createElement('li');
+      const origin = row.id.startsWith('practice.') ? 'exercice proposé' : 'exemple de l’atelier d’IA';
+      item.textContent = row.text + ' → ' + labels[row.intent] + ' · ' +
+        (row.split === 'test' ? 'contrôle réservé' : 'entraînement') + ' · ' + origin;
+      list.appendChild(item);
+    }
+    el('preview').replaceChildren(list);
+  }
+  function loadTransfer(incoming, raw) {
+    api.planTransfer(readCorpus(), incoming, el('work').value.trim() || defaultWork(readCorpus()), new Date().toISOString());
+    pending = incoming;
+    pendingRaw = raw;
+    preview();
+  }
+  async function commit(change, trialText) {
+    function apply() {
+      const base = readCorpus();
+      const next = api.validate(change(base));
+      let trial = null;
+      if (trialText) trial = {text:trialText,workId:el('work').value,
+        prediction:api.predict(next,trialText,el('work').value)};
+      const report = makeReport(next,trial);
+      if (JSON.stringify(base) !== JSON.stringify(next)) localStorage.setItem(corpusKey,JSON.stringify(next));
+      localStorage.setItem(reportKey, JSON.stringify(report));
+      show(describe(report) + (trial ? '\n« ' + trial.text + ' » → ' + (labels[trial.prediction.intent] || 'refus') : ''));
+      if (window.POIiCloud) window.POIiCloud.saveWork(next,report);
+      document.dispatchEvent(new CustomEvent('poi-work-saved',{detail:{corpus:next,report:report}}));
+      return report;
+    }
+    if (navigator.locks) return navigator.locks.request(corpusKey,apply);
+    return apply();
+  }
+  function act(id, action) {
+    el(id).onclick = async function () {
+      this.disabled = true;
+      try { await action(); } catch (error) { show(error.message); }
+      finally { this.disabled = false; }
+    };
+  }
+  act('review', async () => {
+    const incoming = pending;
+    if (!incoming) return;
+    const example = incoming.proposals.find(proposal => proposal.split === 'train');
+    await commit(base => api.planTransfer(base,incoming,el('work').value.trim() || defaultWork(base),new Date().toISOString()).corpus,
+      example ? example.text : null);
+    if (pendingRaw && localStorage.getItem(transferKey) === pendingRaw) localStorage.removeItem(transferKey);
+    pending = pendingRaw = null;
+    preview();
+  });
+  act('add', () => commit(base => api.merge(base,{schema:api.SCHEMA, records:[{
+    id:'work-' + Date.now() + '-' + Math.random().toString(36).slice(2,9),
+    text:el('text').value,intent:el('intent').value,workId:el('work').value.trim(),
+    source:'user_correction',createdAt:new Date().toISOString(),split:el('split').value
+  }]})));
+  act('check', () => commit(base => base));
+  act('try', () => {
+    const query=el('text').value.trim();
+    if (!query || query.length > 500) throw Error('Saisissez une consigne de 1 à 500 caractères.');
+    return commit(base => base,query);
+  });
+  el('import').onchange = async function () {
+    try {
+      const file = this.files[0];
+      if (!file) return;
+      if (file.size > 5000000) throw Error('Fichier trop volumineux.');
+      const incoming = JSON.parse(await file.text());
+      if (incoming.schema === api.TRANSFER_SCHEMA) {
+        loadTransfer(incoming,null);
+        show('Transfert prêt pour vérification.');
+      } else {
+        await commit(base => api.merge(base,incoming));
+        if (!el('work').value) el('work').value = defaultWork(readCorpus());
+        preview();
+      }
+    } catch (error) { show('Import refusé : ' + error.message); }
+    finally { this.value = ''; }
+  };
+  function download(name, data) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+    const link = document.createElement('a');
+    link.href=url; link.download=name; document.body.appendChild(link);
+    link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),2000);
+  }
+  act('export', () => download('POI_WORK_LANGAGE_CORRECTIONS_V1.json',readCorpus()));
+  act('export-report', () => {
+    const raw = localStorage.getItem(reportKey);
+    download('POI_WORK_LANGAGE_RESULTATS_V1.json',raw ? JSON.parse(raw) : makeReport(readCorpus()));
+  });
+  el('work').onchange = () => { try { preview(); } catch (error) { show(error.message); } };
+  function refresh() {
+    try {
+      const corpus = readCorpus();
+      if (!el('work').value) el('work').value = defaultWork(corpus);
+      const raw = localStorage.getItem(transferKey);
+      if (raw && raw !== pendingRaw) loadTransfer(JSON.parse(raw),raw);
+      if (!raw && pendingRaw) pending = pendingRaw = null;
+      preview();
+      show(corpus.records.length + ' consigne(s) disponibles.' + (pending ? ' Transfert prêt pour vérification.' : ''));
+    } catch (error) { show('Lecture locale : ' + error.message); }
+  }
+  window.poiRestoreWork = function (incoming) {
+    const restored = api.validate(incoming);
+    if (readCorpus().records.length || !restored.records.length) return false;
+    localStorage.setItem(corpusKey, JSON.stringify(restored));
+    if (!el('work').value) el('work').value = restored.records[restored.records.length - 1].workId || defaultWork(restored);
+    refresh();
+    return true;
+  };
+  window.addEventListener('storage', event => { if ([transferKey,corpusKey].includes(event.key)) refresh(); });
+  window.addEventListener('pageshow',refresh);
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+  refresh();
+}());
+</script></html>

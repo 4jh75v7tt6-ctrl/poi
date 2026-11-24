@@ -309,6 +309,42 @@
       ':root{color-scheme:light;--ink:#202123;--muted:#6b6b6b;--line:#e5e5e5;--accent:#202123}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f7f7f8;color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1080px;margin:auto;padding:40px 28px}.hero{padding:34px 0 28px;border-bottom:2px solid var(--accent)}.eyebrow{font-size:13px;letter-spacing:.12em;font-weight:750;color:var(--accent)}h1{font-size:42px;line-height:1.15;letter-spacing:-.04em;margin:12px 0}.subtitle{font-size:20px}.metadata{font-size:13px;color:var(--muted)}.notice{background:#f0f0f0;border:1px solid #dedede;border-radius:12px;padding:18px;margin:24px 0}.contents{display:flex;flex-wrap:wrap;gap:10px 18px;padding:10px 0 26px}.contents a{color:#202123}section{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;margin:24px 0;scroll-margin-top:20px}h2{font-size:26px;line-height:1.25;letter-spacing:-.025em;margin:0 0 20px}h3{font-size:20px;margin:24px 0 12px}h4{font-size:17px;margin:20px 0 8px}p{margin:12px 0;overflow-wrap:anywhere}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}.stats div{border:1px solid var(--line);border-radius:12px;padding:16px}.stats strong{display:block;font-size:30px;color:var(--accent);line-height:1.2}.stats span{font-size:13px;color:var(--muted)}.table-wrap{width:100%;overflow:auto;margin:16px 0}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:11px 12px;white-space:pre-wrap;overflow-wrap:anywhere}th{font-size:13px;background:#f3f3f3;color:#3d3d3d;font-weight:700}td{max-width:440px}code{font-size:13px;background:#eeeeee;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#f5f5f5;border:1px solid var(--line);padding:16px;border-radius:9px;max-height:none}details{border:1px solid var(--line);border-radius:10px;margin:15px 0;background:#fff}summary{font-weight:650;padding:12px 15px;cursor:pointer}.details-body{padding:0 15px 15px}.message{padding:18px 20px;background:#ffffff;border:1px solid #e5e5e5;border-radius:14px;margin:16px 0}.message.user{background:#f5f5f5;border-color:var(--line)}.message-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}.message-head span{font-size:13px;color:var(--muted)}.message-text{white-space:pre-wrap}.explanation{border-left:3px solid #a6a6a6;padding-left:12px;font-size:14px}.empty{color:var(--muted);font-style:italic}.block{border-top:1px solid var(--line);padding-top:6px;margin-top:18px}li{margin:10px 0}footer{padding:22px 0 40px;color:var(--muted);font-size:13px}@media(max-width:600px){main{padding:20px 14px}.hero{padding-top:18px}h1{font-size:33px}.subtitle{font-size:18px}section{padding:19px 15px}h2{font-size:23px}.stats{grid-template-columns:repeat(2,1fr)}th,td{padding:9px 8px}.message{padding:15px}.contents{gap:9px 14px}.notice{padding:15px}}@media print{body{background:#fff;font-size:10pt}main{max-width:none;padding:0}.hero{padding-top:0}h1{font-size:28pt}h2{font-size:18pt}section{border:0;border-radius:0;padding:0;break-before:auto;margin:24pt 0}.contents{display:none}details>summary{display:none}details>.details-body{display:block!important}details{border:0}.details-body{padding:0}.table-wrap{overflow:visible}table{font-size:8pt}tr{break-inside:avoid}.message{break-inside:avoid}pre{font-size:7pt;max-height:none}.stats{grid-template-columns:repeat(4,1fr)}a{color:inherit;text-decoration:none}@page{margin:16mm}}' +
       '</style></head><body><main>' + body + '</main></body></html>';
   }
+  var WORK_TRANSFER_NAME = 'POI_WORK_TRANSFERT_V1.json';
+  var WORK_PRACTICE = [
+    ['save', 'Enregistre le résultat dans ce Work'],
+    ['modify', 'Modifie la limite de mes réponses à 5 mots.'],
+    ['tell', 'Dis-moi combien font 5 + 7.'],
+    ['search', 'Cherche des documents sur les volcans.'],
+    ['correct', 'Corrige cette réponse.'],
+    ['create_component', 'Crée une composante « Volcans ».'],
+    ['document_watch', 'Lance une veille documentaire sur les volcans.'],
+    ['save', 'Enregistre cette information dans le Work.', 'test'],
+    ['modify', 'Modifie la limite à 10 mots.', 'test'],
+    ['search', 'Cherche des informations sur les séismes.', 'test']
+  ];
+
+  function workTextKey(text) {
+    return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  function createWorkTransfer(state) {
+    var proposals = WORK_PRACTICE.map(function (row, index) {
+      return {id: 'practice-v1-' + (index + 1), text: row[1], intent: row[0],
+        split: row[2] || 'train', origin: 'practice_template'};
+    });
+    var known = new Set(proposals.map(function (item) { return workTextKey(item.text); }));
+    // Only the explicit memory label has a direct counterpart in Work.
+    (state.examples || []).forEach(function (example) {
+      if (example.origin !== 'user' || example.intent !== 'remember') return;
+      var key = workTextKey(example.text);
+      if (!key || known.has(key) || !/^[a-zA-Z0-9._-]{1,60}$/.test(example.id)) return;
+      known.add(key);
+      proposals.push({id: 'github-' + example.id, text: example.text, intent: 'save',
+        split: 'train', origin: 'github_user_example'});
+    });
+    return {schema: 'poi.work-transfer.v1', workId: '', proposals: proposals};
+  }
+
   function createFiles(state, rawContext) {
     if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Aucun état valide à exporter.');
     var context = getContext(rawContext);
@@ -321,6 +357,7 @@
     var generation = generationInventory(state, context);
     var files = [];
     function add(name, role, content) { files.push({name:name,role:role,content:content}); }
+    add(WORK_TRANSFER_NAME, 'Consignes et contrôles proposés pour l’atelier Work', json(createWorkTransfer(state)));
     add('sauvegarde-poi.json','Sauvegarde complète et restaurable',canonical);
     add('rapport-poi-complet.html','Rapport lisible, autonome et imprimable',generateReport(state,context));
     add('conversation.csv','Tous les messages conservés et leurs métadonnées',csv(
@@ -418,6 +455,7 @@
       'Une suppression volontaire, une réinitialisation ou la perte du stockage local ne peuvent pas être annulées sans une sauvegarde antérieure.',
       '', 'FICHIERS',
       'sauvegarde-poi.json : état restaurable complet.',
+      'POI_WORK_TRANSFERT_V1.json : lot à importer et valider dans Apprentissage des consignes Work.',
       'rapport-poi-complet.html : rapport lisible, autonome et imprimable.',
       'conversation.csv, memoire.csv, exemples-apprentissage.csv : contenus et métadonnées.',
       'entrainements.csv, evaluation.csv : mesures et décisions enregistrées.',
@@ -500,5 +538,5 @@
     var timestamp=context.createdAt.replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
     return {filename:'poi-export-complet-'+timestamp+'.zip',bytes:bytes,files:files.map(function (file) { return {name:file.name,size:fileBytes(file.content).length}; }),counts:countsFor(state),createdAt:context.createdAt};
   }
-  return {VERSION:VERSION,produce:produce,generateReport:generateReport,createFiles:createFiles,createZIP:createZIP,crc32:crc32};
+  return {VERSION:VERSION,createWorkTransfer:createWorkTransfer,workTransferName:WORK_TRANSFER_NAME,produce:produce,generateReport:generateReport,createFiles:createFiles,createZIP:createZIP,crc32:crc32};
 });

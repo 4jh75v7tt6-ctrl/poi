@@ -163,6 +163,7 @@
       else if (storageMode === 'localStorage') localStorage.setItem('poi-state-v1', snapshot);
       else throw new Error('Stockage persistant indisponible dans ce navigateur.');
       lastSavedAt = now(); lastStorageError = null;
+      if (revision === saveRevision) archiveLearning();
       if (revision === saveRevision) { $('save-label').textContent = 'Enregistré sur cet appareil · ' + date(lastSavedAt, true); renderStorage(); }
       return true;
     }).catch(function (error) {
@@ -621,7 +622,21 @@
         generationDraft = null; generationNotice = 'Réponse rédigée localement en ' + (result.generation.durationMs / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' s. Vous pouvez consulter les passages fournis dans son explication.';
       } else Core.reply(state, text, options);
       $('message-input').value = ''; $('message-count').textContent = '0'; $('message-input').style.height = '';
-      renderChat(true); renderStats(); renderFacts(); renderGenerator(); await save();
+      var exchange = state.messages.slice(-2);
+      renderChat(true); renderStats(); renderFacts(); renderGenerator();
+      var saved = await save();
+      if (saved && exchange.length === 2 && exchange[0].role === 'user' && exchange[1].role === 'assistant' && window.POIiCloud) {
+        try {
+          window.POIiCloud.saveGithubResult({
+            schema: 'poi.github-diagnostic.v1', createdAt: exchange[1].createdAt,
+            requestId: exchange[0].id, responseId: exchange[1].id,
+            request: exchange[0].text, response: exchange[1].text,
+            source: exchange[1].source, intent: exchange[1].intent, score: exchange[1].score
+          });
+        } catch (error) {
+          $('poi-icloud-status').textContent = 'Archivage de cet échange en attente. ' + error.message;
+        }
+      }
     } catch (error) {
       if (epoch === generationEpoch) {
         generationDraft = null;
@@ -662,12 +677,70 @@
     link.href = url; link.download = filename; link.style.display = 'none'; document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
   function exportContext() { return { createdAt: now(), appVersion: APP_VERSION, coreVersion: Core.VERSION, display: { preference: $('theme-choice').value, effective: document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') }, selfTests: selfTests, evaluation: evaluation, evaluationAt: evaluationAt, evaluationModelVersion: evaluationModelVersion, offline: clone(offline), generation: Generator ? Generator.status() : null, storage: { mode: storageMode, lastSavedAt: lastSavedAt, lastError: lastStorageError, writeBlocked: writeBlocked }, userAgent: navigator.userAgent, language: navigator.language, platform: navigator.platform, limits: Core.LIMITS }; }
+  var lastWorkTransfer = null;
+  var lastGithubMeasures = null;
+
+  function queueWorkTransfer(force) {
+    var transfer = Exporter.createWorkTransfer(state);
+    var encoded = JSON.stringify(transfer);
+    if (window.POIiCloud && (force || encoded !== lastWorkTransfer)) {
+      window.POIiCloud.saveTransfer(transfer);
+      lastWorkTransfer = encoded;
+    }
+    return transfer;
+  }
+
+  function archiveLearning() {
+    if (!window.POIiCloud) return;
+    try {
+      var examples = state.examples.filter(function (example) { return example.origin === 'user'; });
+      var runs = state.trainingRuns.map(function (run) {
+        return {id: run.id, createdAt: run.createdAt, status: run.status, modelVersion: run.modelVersion,
+          before: run.evaluationBefore && run.evaluationBefore.correct,
+          after: run.evaluationAfter && run.evaluationAfter.correct,
+          total: run.evaluationAfter && run.evaluationAfter.total};
+      });
+      if (!examples.length && !runs.length && !evaluation) return;
+      var measures = {examples: examples, runs: runs, evaluation: evaluation, evaluatedAt: evaluationAt};
+      var serialized = JSON.stringify(measures);
+      if (serialized === lastGithubMeasures) return;
+      queueWorkTransfer(false);
+      window.POIiCloud.saveGithubResult(Object.assign({
+        schema: 'poi.github-diagnostic.v1', createdAt: now()
+      }, measures));
+      lastGithubMeasures = serialized;
+    } catch (error) {
+      $('poi-icloud-status').textContent = 'Archivage iCloud en attente. ' + error.message;
+    }
+  }
+
+  function openWork(event) {
+    try {
+      var transfer = Exporter.createWorkTransfer(state);
+      localStorage.setItem('poi-work-transfer-v1', JSON.stringify(transfer));
+      try { queueWorkTransfer(false); }
+      catch (error) { $('poi-icloud-status').textContent = 'Archivage en attente. ' + error.message; }
+    } catch (error) {
+      event.preventDefault();
+      toast('Transfert local indisponible. Exportez le lot en JSON puis ouvrez l’atelier Work pour l’importer.');
+    }
+  }
+
+  function exportWork() {
+    var transfer = Exporter.createWorkTransfer(state);
+    download(JSON.stringify(transfer, null, 2), 'application/json;charset=utf-8', Exporter.workTransferName);
+    try { queueWorkTransfer(false); }
+    catch (error) { $('poi-icloud-status').textContent = 'Archivage en attente. ' + error.message; }
+  }
+
   function exportComplete() {
     if (exporting || training) return;
     exporting = true;
     try {
       note('export_requested', 'user', 'Demande d’un dossier complet : état JSON, rapport, données tabulaires, paramètres des modèles et contexte disponible.');
       var result = Exporter.produce(state, exportContext());
+      try { queueWorkTransfer(false); }
+      catch (error) { $('poi-icloud-status').textContent = 'Archivage en attente. ' + error.message; }
       download(result.bytes, 'application/zip', result.filename); save(); toast('Dossier complet préparé : ' + result.files.length + ' fichiers. Retrouvez-le dans vos téléchargements.');
     } catch (error) { toast('Export impossible : ' + error.message); }
     finally { exporting = false; }
@@ -728,6 +801,8 @@
       note('appearance_changed', 'user', 'Apparence choisie : ' + this.value + '.'); save();
     });
     document.querySelectorAll('[data-tab]').forEach(function (button) { button.addEventListener('click', function () { navigate(button.dataset.tab, true); }); });
+    $('open-work').addEventListener('click', openWork);
+    $('export-work').addEventListener('click', exportWork);
     document.querySelectorAll('[data-action="export"]').forEach(function (button) { button.addEventListener('click', exportComplete); });
     document.querySelectorAll('[data-prompt]').forEach(function (button) { button.addEventListener('click', function () { sendMessage(button.dataset.prompt); }); });
     window.addEventListener('hashchange', function () { navigate(location.hash.slice(1), false); });

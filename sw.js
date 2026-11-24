@@ -1,7 +1,7 @@
 /* POI 0.3.0 — offline shell. Personal files and conversations never enter this cache. */
 'use strict';
 
-const VERSION = 'poi-v1.3.2';
+const VERSION = 'poi-v1.3.3';
 const BASE = new URL('./', self.registration.scope);
 const PREFIX = 'poi:' + encodeURIComponent(BASE.pathname) + ':';
 const META_CACHE = PREFIX + 'metadata';
@@ -17,6 +17,10 @@ const POINTER = new URL('__poi_shell_' + VERSION, BASE).href;
 const INDEX_URL = new URL('index.html', BASE).href;
 const ASSETS = [
   ['index.html', 'html'],
+  ['work-training.html', 'html'],
+  ['work-language.js', 'js'],
+  ['poi-icloud.js', 'js'],
+  ['work-manifest.webmanifest', 'manifest'],
   ['styles.css', 'css'],
   ['app.js', 'js'],
   ['documents.js', 'js'],
@@ -58,6 +62,7 @@ const GENERATION_RUNTIME_ASSETS = [
 const GENERATION_RUNTIME_BY_URL = new Map(GENERATION_RUNTIME_ASSETS.map(asset => [asset.url, asset]));
 const HTML_CANONICAL = new Map([
   [INDEX_URL, BASE.href],
+  [new URL('work-training.html', BASE).href, new URL('work-training', BASE).href],
   [new URL('guide.html', BASE).href, new URL('guide', BASE).href]
 ]);
 // Both explicit filenames and the host's canonical HTML routes share one cache.
@@ -117,7 +122,8 @@ async function validResponse(response, asset, expectedURL) {
     if (asset.kind === 'manifest') {
       try {
         const manifest = JSON.parse(body);
-        if (!manifest.name || manifest.start_url !== './') return false;
+        const expectedStart = asset.path === 'work-manifest.webmanifest' ? './work-training.html' : './';
+        if (!manifest.name || manifest.start_url !== expectedStart) return false;
       } catch (_) { return false; }
     }
   }
