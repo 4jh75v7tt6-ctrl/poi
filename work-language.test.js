@@ -44,3 +44,64 @@ assert.throws(()=>api.planTransfer(corpus,{...transfer,proposals:[transfer.propo
 assert.throws(()=>api.merge(corpus, transfer),/Format de corpus/);
 assert.equal(api.predict(corpus,corpus.records[0].text,'another-work').accepted,false);
 console.log('Transfert, conservation de la correction initiale, répétition, portée et contrôle indépendant : OK');
+
+const record = (id, text, intent, workId = 'one', split = 'train') =>
+  ({id, text, intent, workId, split, source:'user_label', createdAt:stamp});
+const scoped = api.validate({schema:api.SCHEMA, records:[
+  record('a1', 'Inspecte le bilan du port.', 'search'),
+  record('a2', 'Rectifie la date du devis.', 'correct'),
+  record('a3', 'Ajoute une rubrique sur les stocks.', 'create_component'),
+  record('a4', 'Ajoute ce texte dans les notes.', 'save'),
+  record('b1', 'Inspecte le bilan du port.', 'correct','two'),
+  record('g1', 'Détaille les étapes.', 'tell','')
+]});
+for (const [scope, input, expected] of [
+  ['one','Pouvez-vous inspecter le toit de l’atelier ?', 'search'],
+  ['one','Rectifiez les chiffres de janvier.', 'correct'],
+  ['one','Ajoutez une nouvelle rubrique météo.', 'create_component'],
+  ['one','Ajoute ce texte dans les notes.', 'save'],
+  ['one','Ne rectifiez pas la date du devis.', null],
+  ['one','Inspecte pas le bilan du port.', null],
+  ['one','Inspecte le bilan puis rectifie le devis.', null],
+  ['one','Détruis le bilan du port.', null],
+  ['one','Ajoute une facture.', null],
+  ['two','Inspecte le bilan du port.', 'correct'],
+  ['inconnu','Inspecte le bilan du port.', null],
+  ['','Inspecte le bilan du port.', null],
+  ['','Détaillez les options disponibles.', 'tell'],
+  ['two','Détaillez les horaires.', 'tell'],
+  [undefined,'Inspecte le bilan du port.', null]
+]) assert.equal(api.predict(scoped,input,scope).intent,expected,input);
+const specialized = {schema:api.SCHEMA, records:[record('one-shot','Ajoute une rubrique sur les stocks.','create_component')]};
+assert.equal(api.predict(specialized,'Ajoute une facture sur les stocks.','one').intent,null);
+assert.throws(()=>api.merge(scoped,{schema:api.SCHEMA,records:[record('collision','Inspecte le bilan du port.','tell','')]}),/contradictoire/);
+assert.throws(()=>api.merge(scoped,{schema:api.SCHEMA,records:[record('collision','Détaille les étapes.','search','two')]}),/contradictoire/);
+const generalControl=api.merge(scoped,{schema:api.SCHEMA,records:[record('test-general','Inventorie les étalages.', 'unknown','','test'),
+  record('one-inventory','Inventorie les étalages.', 'unknown','one')]});
+assert.equal(api.evaluate(generalControl).excluded.length,0);
+assert.equal(api.evaluate(generalControl).results[0].evidence,null);
+console.log('Verbes fléchis, cibles, refus, ambiguïtés, contrôle réservé et isolation du Work : OK');
+const indirect = {schema:api.SCHEMA, records:[
+  record('why','Pourquoi mon dossier est vide ?', 'tell'),
+  record('declarative','Je préfère les longues lettres manuscrites.', 'save'),
+  record('find','Recherche la date du contrat dans mes archives.', 'search'),
+  record('nominal','Note de service sur les vélos.', 'tell')
+]};
+for (const [input, expected] of [
+  ['Pourquoi la fenêtre est ouverte ?', null],
+  ['Pourquoi le dossier est vide ici ?', 'tell'],
+  ['Je préfère les fauteuils rouges.', null],
+  ['Je préfère les lettres manuscrites.', 'save'],
+  ['Trouve la date du contrat dans mes archives.', 'search'],
+  ['Efface la date du contrat dans mes archives.', null],
+  ['Recherche sans modifier le contrat dans mes archives.', null],
+  ['Recherche une date et ne les enregistre pas.', null],
+  ['Ne me recherche pas la date du contrat dans mes archives.', null],
+  ['Recherche-le pas dans mes archives.', null],
+  ['Note le pesage du cheval.', null],
+  ['Recherch le compte du contrat dans mes archives.', null],
+  ['Recherchez', null],
+  ['Peux-tu rechercher ?', null],
+  ['Pourquoi ?', null]
+]) assert.equal(api.predict(indirect,input,'one').intent,expected,input);
+console.log('Questions personnalisées, négations et appui lexical entre verbes compatibles : OK');

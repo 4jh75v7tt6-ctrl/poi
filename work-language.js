@@ -14,6 +14,54 @@
     w.forEach(function (v, i) { if (!STOP.has(v)) set.add('w:' + v); if (i && !STOP.has(w[i-1]) && !STOP.has(v)) set.add('b:' + w[i-1] + ':' + v); });
     return set;
   }
+  // Remove common request openings before comparing action verbs. The label
+  // still comes from a validated record in the selected Work.
+  var REQUEST_PREFIX = /^(?:(?:s il (?:te|vous) plait|merci de|svp|(?:est ce que )?(?:tu (?:peux|pourrais)|vous (?:pouvez|pourriez)|peux tu|pourrais tu|pouvez vous|pourriez vous)|je (?:te|vous) demande de|poi) )+/;
+  function verbForm(word) {
+    if (!word) return '';
+    if (['dis','dites','dire'].includes(word)) return 'dire';
+    return word.length > 3 ? word.replace(/(?:er|ez|e)$/, '') : word;
+  }
+  // A grammatical hint, independent of classification labels. Related verbs
+  // can share a family but only exact lemmas get a position bonus.
+  var verbFamilies = new Map(), verbForms = new Map();
+  [
+    'chercher rechercher trouver', 'enregistrer sauvegarder', 'garder conserver',
+    'changer modifier', 'dire expliquer', 'corriger rectifier', 'creer',
+    'lancer demarrer', 'ajouter', 'explorer', 'examiner inspecter', 'ajuster',
+    'reviser', 'noter consigner', 'raconter', 'detailler', 'classer ranger',
+    'deplacer', 'ignorer', 'effacer supprimer', 'dessiner', 'calculer',
+    'lister enumerer', 'resumer', 'comparer', 'trier', 'copier', 'publier'
+  ].forEach(function(group) {
+    group.split(' ').forEach(function(verb) {
+      var stem = verbForm(verb);
+      verbFamilies.set(stem,group);
+      var forms = verb === 'dire' ? ['dire','dis','dites'] : [verb,stem + 'e',stem + 'ez'];
+      forms.forEach(function(form){verbForms.set(form,stem);});
+    });
+  });
+  var FILLER = new Set(['nouveau','nouvel','nouvelle','nouveaux','nouvelles','l','d','s','n','te','ton','ta','tes','votre','vos',
+    'pourquoi','comment','quoi','combien','quand','quel','quelle','quels','quelles','qu','c','sont','ai','suis','il','ils','elles','toujours','ici']);
+  function command(text) {
+    var parts = words(text).join(' ').replace(REQUEST_PREFIX, '').split(' ');
+    var head = verbForms.get(parts[0]), family = verbFamilies.get(head);
+    if (['note','classe','recherche','copie','garde','lance'].includes(parts[0]) && ['de','du','d'].includes(parts[1])) {
+      head = undefined;
+      family = undefined;
+    }
+    var content = parts.slice(1).filter(function(w){return !STOP.has(w) && !FILLER.has(w);});
+    var negative = /^(?:ne|n|sans|pas|jamais) |(?:^| )(?:ne|n)(?: [a-z0-9]+){0,8} (?:pas|jamais|rien|plus|aucun|aucune)(?: |$)/.test(parts.join(' ')) ||
+      /^(?:[a-z]+) (?:(?:moi|me|toi|te|nous|vous|lui|leur|le|la|les|en|y) ){0,3}(?:pas|jamais)(?: |$)/.test(parts.join(' '));
+    var multiple = parts.some(function(word,i) {
+      var next = parts[i+1] || '';
+      return ['puis','ensuite'].includes(word) ||
+        (['et','ou','sans','ni'].includes(word) && (verbForms.has(next) || ['ne','n'].includes(next))) ||
+        (word === 'sans' && /(?:er|ir|re)$/.test(next));
+    });
+    return {head:head, family:family, argument:(content[0] || '').replace(/s$/, ''),
+      content:new Set(content), simple:!negative && !multiple};
+  }
+  function sameScope(record, workId) {return !record.workId || record.workId === workId;}
   function key(s) { return words(s).join(' '); }
   function checkRecord(r) {
     if (!r || typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(function(k){ return !['id','text','intent','workId','source','createdAt','split'].includes(k); })) throw Error('Champs de correction invalides.');
@@ -33,8 +81,12 @@
     var records = value.records.map(function(raw){
       var r = checkRecord(raw), k = key(r.text);
       if (ids.has(r.id)) throw Error('Identifiant dupliqué.');
-      if (texts.has(k) && texts.get(k) !== r.intent) throw Error('Corrections contradictoires : ' + r.text);
-      ids.add(r.id); texts.set(k,r.intent); return r;
+      var scopes = texts.get(k) || new Map();
+      if ((scopes.has(r.workId) && scopes.get(r.workId) !== r.intent) ||
+          (scopes.has('') && scopes.get('') !== r.intent) ||
+          (!r.workId && Array.from(scopes.values()).some(function(intent){return intent !== r.intent;})))
+        throw Error('Corrections contradictoires : ' + r.text);
+      ids.add(r.id); scopes.set(r.workId,r.intent); texts.set(k,scopes); return r;
     });
     return {schema:SCHEMA, records:records};
   }
@@ -92,41 +144,68 @@
 
   function buildIndex(records) {
     return records.filter(function(r){return r.split === 'train';}).map(function (r) {
-      return {record:r, features:features(r.text), key:key(r.text)};
+      return {record:r, features:features(r.text), key:key(r.text), command:command(r.text)};
     });
   }
 
   function predictFrom(index, text, workId) {
-    var query = features(text);
+    var query = features(text), form = command(text), exact = key(text);
     if (!query.size) return {intent:null, accepted:false, score:0, reason:'Consigne sans caractéristiques utiles.'};
+    var eligible = index.filter(function(entry){return sameScope(entry.record,workId);});
+    var sameHeadIntents = new Set(eligible.filter(function(entry){return entry.command.head === form.head;})
+      .map(function(entry){return entry.record.intent;}));
     var best = new Map();
-    index.forEach(function (entry) {
-      var record = entry.record;
-      if (workId && record.workId && record.workId !== workId) return;
-      var common = 0;
-      query.forEach(function(v){if(entry.features.has(v)) common++;});
-      if (!common) return;
-      var score = common / Math.sqrt(query.size * entry.features.size);
+    eligible.forEach(function (entry) {
+      var record = entry.record, score;
+      if (entry.key === exact) {
+        score = 1;
+      } else {
+        var learned = entry.command;
+        if (!form.simple || !learned.simple || !form.content.size || !learned.content.size || form.family !== learned.family) return;
+        // Compound operations and verbs learned with several labels also need
+        // a matching target, even when the action word itself matches.
+        if (((form.family && sameHeadIntents.size > 1) || ['create_component','document_watch'].includes(record.intent)) &&
+            form.argument !== learned.argument) return;
+        if (form.family && form.head === learned.head) {
+          var common = 0;
+          query.forEach(function(v){if(entry.features.has(v)) common++;});
+          score = 0.5 + 0.49 * common / Math.sqrt(query.size * entry.features.size);
+        } else {
+          // Free-form examples and different verbs require strong lexical
+          // evidence. Exclude the opening word from those confirmatory clues.
+          var matches = 0;
+          form.content.forEach(function(v){if(learned.content.has(v)) matches++;});
+          var overlap = matches / Math.sqrt(form.content.size * learned.content.size);
+          if (matches < 2 || overlap < 0.70) return;
+          score = 0.94 * overlap;
+        }
+      }
       var prior = best.get(record.intent);
       if (!prior || score > prior.score || (score === prior.score && record.id.localeCompare(prior.id) < 0))
         best.set(record.intent, {intent:record.intent, score:score, id:record.id});
     });
     var candidates = Array.from(best.values()).sort(function(a,b){return b.score-a.score || a.id.localeCompare(b.id);});
     var first = candidates[0], rival = candidates[1];
-    var accepted = !!first && first.score >= 0.46 && (!rival || first.score-rival.score >= 0.10) && first.intent !== 'unknown';
+    var accepted = !!first && (first.score === 1 || !rival || first.score-rival.score >= 0.10) && first.intent !== 'unknown';
     return {intent:accepted ? first.intent : null, candidate:first ? first.intent : null, score:first ? first.score : 0, accepted:accepted,
       reason:accepted ? 'Correspondance avec une consigne validée.' : 'Demande ambiguë, inconnue ou hors périmètre.',
       evidence:first ? first.id : null};
   }
   function predict(corpus, text, workId) {
-    return predictFrom(buildIndex(validate(corpus).records), text, workId);
+    var index = buildIndex(validate(corpus).records);
+    if (workId === undefined) {
+      // Legacy callers without an argument referred to their only Work.
+      var scopes = new Set(index.map(function(e){return e.record.workId;}).filter(Boolean));
+      workId = scopes.size === 1 ? scopes.values().next().value : '';
+    }
+    return predictFrom(index, text, workId);
   }
   function evaluate(corpus) {
     var records = validate(corpus).records, index = buildIndex(records), seen = new Set(), results = [], excluded = [];
     records.filter(function(r){return r.split==='test';}).forEach(function(r) {
       var textKey = key(r.text), scope = JSON.stringify([r.workId,textKey]);
       var overlap = index.some(function(entry) {
-        return entry.key === textKey && (!entry.record.workId || !r.workId || entry.record.workId === r.workId);
+        return entry.key === textKey && sameScope(entry.record,r.workId);
       });
       if (overlap || seen.has(scope)) {
         excluded.push({id:r.id, reason:overlap ? 'présent dans l’entraînement' : 'contrôle en double'});

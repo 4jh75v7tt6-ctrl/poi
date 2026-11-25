@@ -575,7 +575,45 @@
       return current && !current.correct;
     });
   }
+  function compareProbe(event) {
+    event.preventDefault();
+    var target = $('candidate-probe-result'), text = $('candidate-probe-text').value.trim();
+    target.replaceChildren();
+    if (!candidate || !text) return;
+    var versions = [[state.model, 'Version active'], [candidate.model, 'Version candidate']];
+    var values = el('div', 'personal-result-values');
+    try {
+      versions.forEach(function (version) {
+        var model = version[0], cell = el('div');
+        cell.appendChild(el('small', '', version[1]));
+        if (model) {
+          var result = Core.predict(model, text);
+          cell.appendChild(el('strong', '', result.accepted ? category(result.intent) : 'Refus'));
+          if (!result.accepted) cell.appendChild(el('small', '', result.reason));
+        } else cell.appendChild(el('strong', '', 'Aucun modèle actif'));
+        values.appendChild(cell);
+      });
+      target.appendChild(values);
+      var run = state.trainingRuns.find(function (entry) { return entry.id === candidate.runId; });
+      function key(value) { return value.normalize('NFC').toLocaleLowerCase('fr').trim().replace(/\s+/gu, ' '); }
+      var query = key(text);
+      var known = (activeTrainingSnapshot() || []).concat(run && run.examplesSnapshot || [], candidate.after.results);
+      if (known.some(function (example) { return key(example.text) === query; })) {
+        target.appendChild(el('p', 'help-text', 'Cette formulation figure déjà dans un jeu d’apprentissage ou de contrôle disponible.'));
+      }
+    } catch (error) { target.textContent = error.message; }
+  }
   function renderCandidate() {
+    var form = $('candidate-probe-form');
+    var runId = candidate ? candidate.runId : '';
+    var activeVersion = state.model ? state.model.version : '';
+    if (form && (form.dataset.runId !== runId || form.dataset.activeVersion !== activeVersion)) {
+      form.reset();
+      $('candidate-probe-result').replaceChildren();
+      $('candidate-probe-button').disabled = true;
+      form.dataset.runId = runId;
+      form.dataset.activeVersion = activeVersion;
+    }
     $('candidate-card').hidden = !candidate;
     if (!candidate) return;
     var target = $('candidate-results'); target.replaceChildren(); var metrics = el('div', 'candidate-metrics');
@@ -861,6 +899,13 @@
       if (generationDraft) stopGeneration(true);
       var before = clone(state.identity); state.identity = { name: name, role: role, userName: userName }; note('identity_changed', 'user', 'Identité précédente : ' + JSON.stringify(before) + '. Nouvelle identité : ' + JSON.stringify(state.identity) + '.'); renderChat(false); renderStats(); save(); toast('Identité enregistrée. Les capacités techniques restent les mêmes.');
     });
+    if ($('candidate-probe-form')) {
+      $('candidate-probe-form').addEventListener('submit', compareProbe);
+      $('candidate-probe-text').addEventListener('input', function () {
+        $('candidate-probe-result').replaceChildren();
+        $('candidate-probe-button').disabled = !candidate || !this.value.trim();
+      });
+    }
     $('train-button').addEventListener('click', trainModel);
     $('adopt-button').addEventListener('click', async function () {
       if (!candidate) return;
