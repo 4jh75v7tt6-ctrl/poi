@@ -26,10 +26,10 @@
   // can share a family but only exact lemmas get a position bonus.
   var verbFamilies = new Map(), verbForms = new Map();
   [
-    'chercher rechercher trouver', 'enregistrer sauvegarder', 'garder conserver',
-    'changer modifier', 'dire expliquer', 'corriger rectifier', 'creer',
-    'lancer demarrer', 'ajouter', 'explorer', 'examiner inspecter', 'ajuster',
-    'reviser', 'noter consigner', 'raconter', 'detailler', 'classer ranger',
+    'chercher rechercher trouver', 'enregistrer sauvegarder consigner', 'garder conserver',
+    'changer modifier ajuster', 'dire expliquer', 'corriger rectifier', 'creer',
+    'lancer demarrer', 'ajouter', 'explorer', 'examiner inspecter',
+    'reviser', 'noter', 'raconter', 'detailler', 'classer ranger',
     'deplacer', 'ignorer', 'effacer supprimer', 'dessiner', 'calculer',
     'lister enumerer', 'resumer', 'comparer', 'trier', 'copier', 'publier'
   ].forEach(function(group) {
@@ -59,7 +59,7 @@
         (word === 'sans' && /(?:er|ir|re)$/.test(next));
     });
     return {head:head, family:family, argument:(content[0] || '').replace(/s$/, ''),
-      content:new Set(content), simple:!negative && !multiple};
+      content:new Set(content), simple:!negative && !multiple, negative:negative, multiple:multiple};
   }
   function sameScope(record, workId) {return !record.workId || record.workId === workId;}
   function key(s) { return words(s).join(' '); }
@@ -150,10 +150,14 @@
 
   function predictFrom(index, text, workId) {
     var query = features(text), form = command(text), exact = key(text);
+    if (form.negative || form.multiple) return {intent:null, accepted:false, score:0, reason:'Négation ou actions multiples. La demande exige une précision.'};
     if (!query.size) return {intent:null, accepted:false, score:0, reason:'Consigne sans caractéristiques utiles.'};
     var eligible = index.filter(function(entry){return sameScope(entry.record,workId);});
     var sameHeadIntents = new Set(eligible.filter(function(entry){return entry.command.head === form.head;})
       .map(function(entry){return entry.record.intent;}));
+    var familyIntents = new Set(eligible.filter(function (entry) {
+      return form.family && entry.command.simple && entry.command.family === form.family;
+    }).map(function (entry) { return entry.record.intent; }));
     var best = new Map();
     eligible.forEach(function (entry) {
       var record = entry.record, score;
@@ -176,8 +180,24 @@
           var matches = 0;
           form.content.forEach(function(v){if(learned.content.has(v)) matches++;});
           var overlap = matches / Math.sqrt(form.content.size * learned.content.size);
-          if (matches < 2 || overlap < 0.70) return;
-          score = 0.94 * overlap;
+          var targetHints = {
+            search:/^(?:dates?|passages?|dossiers?|notes?|articles?|informations?|releves?|donnees?|documents?|renseignements?)$/,
+            tell:/^(?:comment|pourquoi|combien|methode|maniere)$/,
+            save:/^(?:observations?|resultats?|releves?|mesures?|informations?|notes?|donnees?)$/,
+            modify:/^(?:limites?|parametres?|durees?|longueurs?|nombres?|reglages?)$/,
+            correct:/^(?:reponses?|valeurs?|titres?|erreurs?|textes?)$/,
+            document_watch:/^veille$/
+          };
+          var hint = targetHints[record.intent];
+          var queryWords = words(text);
+          if (hint && familyIntents.size === 1 && form.family && form.family === learned.family &&
+              (record.intent === 'tell' ? queryWords.some(function (word) { return hint.test(word); }) :
+                Array.from(form.content).some(function (word) { return hint.test(word); }))) {
+            score = 0.68 + overlap * 0.2;
+          } else {
+            if (matches < 2 || overlap < 0.70) return;
+            score = 0.94 * overlap;
+          }
         }
       }
       var prior = best.get(record.intent);

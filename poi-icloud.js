@@ -1,6 +1,17 @@
 /* Local outbox shared by the two POI pages on the same origin. */
 (function () {
   'use strict';
+  // The installed iCloud script returns only to the owner's canonical site.
+  if (location.origin !== 'https://4jh75v7tt6-ctrl.github.io' || !/^\/poi(?:\/|$)/.test(location.pathname)) {
+    const localStatus = () => {
+      const field = document.getElementById('poi-icloud-status');
+      if (field) field.textContent = 'Données locales. Utilisez les boutons d’export pour conserver vos essais.';
+      document.querySelectorAll('[data-poi-native-link]').forEach(link => { link.hidden = true; });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',localStatus);
+    else localStatus();
+    return;
+  }
   const prefix = 'poi-icloud-outbox-v1:';
   const returnKey = 'poi-icloud-return:';
   const nativeURL = 'scriptable:///run/POI_Work_iCloud';
@@ -20,7 +31,7 @@
       return;
     }
     const label = pending ? pending + ' envoi(s) en attente.' : 'File de sauvegarde vide.';
-    status.textContent = [note, pending || connected ? label : '', connected ? 'Classement iCloud actif.' : 'Sauvegarde automatique disponible dans Scriptable.'].filter(Boolean).join(' ');
+    status.textContent = [note, pending || connected ? label : '', connected ? 'Classement iCloud actif.' : (pending ? 'À transmettre depuis ce navigateur.' : 'Sauvegarde automatique disponible dans Scriptable.')].filter(Boolean).join(' ');
     document.querySelectorAll('[data-poi-native-link]').forEach(link => { link.hidden = connected; });
     if (pending && !connected) {
       const transfer = document.createElement('button');
@@ -28,6 +39,17 @@
       transfer.textContent = 'Classer les envois via le presse-papiers et Scriptable';
       transfer.onclick = () => handoff().catch(error => { note = error.message; paint(); });
       status.append(' ', transfer);
+      const label = document.createElement('label');
+      label.textContent = ' Relire un reçu de classement ';
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'application/json,.json';
+      input.onchange = async () => {
+        try {
+          if (!input.files.length || input.files[0].size > 32000) throw Error('Choisissez un reçu de classement JSON.');
+          applyReceipt(JSON.parse(await input.files[0].text())); paint();
+        } catch (error) { note = error.message; paint(); }
+      };
+      label.appendChild(input); status.appendChild(label);
     }
   }
 
@@ -62,7 +84,29 @@
     location.href = nativeURL + '?view=' + view + '&handoff=' + token;
   }
 
+  function applyReceipt(receipt) {
+    if (!receipt || receipt.schema !== 'poi.icloud-receipt.v1' ||
+        !/^[0-9a-f-]{36}$/i.test(receipt.token) || !Array.isArray(receipt.saved) ||
+        receipt.saved.length > 100) throw Error('Format du reçu de classement inconnu.');
+    const key = returnKey + receipt.token;
+    const raw = localStorage.getItem(key);
+    if (!raw) throw Error('Ouvrez ce reçu depuis le navigateur ou l’icône qui a transmis la file.');
+    const pending = new Set(JSON.parse(raw)), saved = new Set(receipt.saved);
+    if (saved.size !== receipt.saved.length || !receipt.saved.every(id => pending.has(id))) {
+      throw Error('Le reçu ne correspond pas au lot transmis.');
+    }
+    for (const id of saved) localStorage.removeItem(prefix + id);
+    localStorage.removeItem(key);
+    note = saved.size + ' envoi(s) confirmé(s) par le reçu iCloud.';
+  }
+
   function acceptReturn() {
+    if (location.hash.startsWith('#poi-receipt=')) {
+      try { applyReceipt(JSON.parse(decodeURIComponent(location.hash.slice(13)))); }
+      catch (error) { note = error.message; }
+      history.replaceState(null, '', location.pathname + location.search);
+      return;
+    }
     const token = location.hash.match(/^#poi-saved=([0-9a-f-]{36})$/i);
     if (!token) return;
     const key = returnKey + token[1];

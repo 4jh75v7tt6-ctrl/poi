@@ -1,7 +1,7 @@
 /* POI 0.3.0 — offline shell. Personal files and conversations never enter this cache. */
 'use strict';
 
-const VERSION = 'poi-v1.3.4';
+const VERSION = 'poi-v1.4.0';
 const BASE = new URL('./', self.registration.scope);
 const PREFIX = 'poi:' + encodeURIComponent(BASE.pathname) + ':';
 const META_CACHE = PREFIX + 'metadata';

@@ -10,6 +10,7 @@
 <p>Importez les consignes préparées dans l’atelier d’IA, vérifiez les intentions proposées et validez le lot pour mesurer les contrôles réservés.</p>
 <p><a href="./index.html">Ouvrir l’atelier d’IA</a> · <a href="scriptable:///run/POI_Work_iCloud" data-poi-native-link>Ouvrir avec sauvegarde iCloud</a></p>
 <div id="poi-icloud-status" role="status">Conservation locale dans ce navigateur.</div>
+<p>Un corpus restaure des consignes déjà validées. Un transfert propose des lignes à relire. Le fichier de résultats sert au diagnostic.</p>
 <label>Importer un corpus ou un transfert Work <input id="import" type="file" accept="application/json,.json"></label>
 <section id="pending" hidden>
   <h2>Consignes à vérifier</h2>
@@ -34,10 +35,12 @@
   const corpusKey = 'poi-work-language-v1';
   const transferKey = 'poi-work-transfer-v1';
   const reportKey = 'poi-work-diagnostic-v1';
+  const scopeKey = 'poi-work-selected-scope-v1';
   const el = (id) => document.getElementById(id);
   const show = (message) => { el('status').textContent = message; };
   const labels = Object.fromEntries(Array.from(el('intent').options, option => [option.value, option.text]));
   let pending = null, pendingRaw = null;
+  const selectedIds = new Set();
   function readCorpus() {
     const raw = localStorage.getItem(corpusKey);
     return raw === null ? api.empty() : api.validate(JSON.parse(raw));
@@ -72,14 +75,21 @@
     for (const row of plan.added) {
       const item = document.createElement('li');
       const origin = row.id.startsWith('practice.') ? 'exercice proposé' : 'exemple de l’atelier d’IA';
-      item.textContent = row.text + ' → ' + labels[row.intent] + ' · ' +
-        (row.split === 'test' ? 'contrôle réservé' : 'entraînement') + ' · ' + origin;
+      const choice = document.createElement('label');
+      const include = document.createElement('input');
+      include.type = 'checkbox'; include.checked = selectedIds.has(row.id);
+      include.onchange = () => { if (include.checked) selectedIds.add(row.id); else selectedIds.delete(row.id); };
+      choice.appendChild(include);
+      choice.appendChild(document.createTextNode(' ' + row.text + ' → ' + labels[row.intent] + ' · ' +
+        (row.split === 'test' ? 'contrôle réservé' : 'entraînement') + ' · ' + origin));
+      item.appendChild(choice);
       list.appendChild(item);
     }
     el('preview').replaceChildren(list);
   }
   function loadTransfer(incoming, raw) {
-    api.planTransfer(readCorpus(), incoming, el('work').value.trim() || defaultWork(readCorpus()), new Date().toISOString());
+    const plan = api.planTransfer(readCorpus(), incoming, el('work').value.trim() || defaultWork(readCorpus()), new Date().toISOString());
+    selectedIds.clear(); plan.added.forEach(row => selectedIds.add(row.id));
     pending = incoming;
     pendingRaw = raw;
     preview();
@@ -110,8 +120,13 @@
     };
   }
   act('review', async () => {
-    const incoming = pending;
-    if (!incoming) return;
+    if (!pending) return;
+    const scope = el('work').value.trim() || defaultWork(readCorpus());
+    const additions = api.planTransfer(readCorpus(),pending,scope,new Date().toISOString()).added;
+    const chosen = additions.filter(row => selectedIds.has(row.id));
+    if (additions.length && !chosen.length) throw Error('Cochez au moins une proposition ou choisissez un autre fichier.');
+    const kept = new Set(chosen.map(row => row.text));
+    const incoming = {...pending,proposals:pending.proposals.filter(row => kept.has(row.text))};
     const example = incoming.proposals.find(proposal => proposal.split === 'train');
     await commit(base => api.planTransfer(base,incoming,el('work').value.trim() || defaultWork(base),new Date().toISOString()).corpus,
       example ? example.text : null);
@@ -119,11 +134,23 @@
     pending = pendingRaw = null;
     preview();
   });
-  act('add', () => commit(base => api.merge(base,{schema:api.SCHEMA, records:[{
-    id:'work-' + Date.now() + '-' + Math.random().toString(36).slice(2,9),
-    text:el('text').value,intent:el('intent').value,workId:el('work').value.trim(),
-    source:'user_correction',createdAt:new Date().toISOString(),split:el('split').value
-  }]})));
+  act('add', () => commit(base => {
+    const workId = el('work').value.trim(), text = el('text').value.trim();
+    const intent = el('intent').value, split = el('split').value;
+    const key = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+    const matching = base.records.filter(row => row.workId === workId && key(row.text) === key(text));
+    if (matching.length) {
+      if (matching.some(row => row.split !== split)) throw Error('Cette phrase figure dans un autre usage. Gardez une phrase nouvelle pour le contrôle réservé.');
+      if (matching.every(row => row.intent === intent)) return base;
+      const previous = [...new Set(matching.map(row => labels[row.intent]))].join(', ');
+      if (!window.confirm('Reclasser « ' + text + ' » de ' + previous + ' vers ' + labels[intent] + ' dans le Work ' + (workId || 'général') + ' ?')) throw Error('Reclassement annulé.');
+    }
+    const ids = new Set(matching.map(row => row.id));
+    return api.merge({schema:api.SCHEMA,records:base.records.filter(row => !ids.has(row.id))},{schema:api.SCHEMA,records:[{
+      id:'work-' + crypto.randomUUID(), text,intent,workId,
+      source:'user_correction',createdAt:new Date().toISOString(),split
+    }]});
+  }));
   act('check', () => commit(base => base));
   act('try', () => {
     const query=el('text').value.trim();
@@ -140,6 +167,7 @@
         loadTransfer(incoming,null);
         show('Transfert prêt pour vérification.');
       } else {
+        if (incoming.schema !== api.SCHEMA) throw Error('Choisissez un corpus de corrections ou un transfert Work. Le diagnostic JSON contient les résultats.');
         await commit(base => api.merge(base,incoming));
         if (!el('work').value) el('work').value = defaultWork(readCorpus());
         preview();
@@ -158,11 +186,16 @@
     const raw = localStorage.getItem(reportKey);
     download('POI_WORK_LANGAGE_RESULTATS_V1.json',raw ? JSON.parse(raw) : makeReport(readCorpus()));
   });
-  el('work').onchange = () => { try { preview(); } catch (error) { show(error.message); } };
+  el('work').onchange = () => {
+    try {
+      localStorage.setItem(scopeKey,el('work').value.trim());
+      if (pending) loadTransfer(pending,pendingRaw);
+    } catch (error) { show(error.message); }
+  };
   function refresh() {
     try {
       const corpus = readCorpus();
-      if (!el('work').value) el('work').value = defaultWork(corpus);
+      if (!el('work').value) el('work').value = localStorage.getItem(scopeKey) ?? defaultWork(corpus);
       const raw = localStorage.getItem(transferKey);
       if (raw && raw !== pendingRaw) loadTransfer(JSON.parse(raw),raw);
       if (!raw && pendingRaw) pending = pendingRaw = null;

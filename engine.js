@@ -255,7 +255,7 @@
     return null;
   }
   function parseRecallCommand(text) {
-    var match = text.match(/^\s*que\s+sais[-\s]tu\s+sur\s+(.{1,85}?)\s*\?*\s*$/i);
+    var match = text.match(/^\s*que\s+sais[-\s]tu\s+(?:sur|de)\s+(.{1,85}?)\s*\?*\s*$/i);
     return match ? match[1].trim().replace(/[?\s]+$/, '') : null;
   }
   // Deliberately limited aliases: remove grammatical wrappers, never another
@@ -520,6 +520,17 @@
     state.meta = candidate.meta;
     state.retention = candidate.retention;
   }
+  function exampleIssue(text, intent) {
+    var key = normalized(text);
+    if (/^(?:ajouter des exemples|une formulation par ligne)$/.test(key) ||
+        /^(?:change|choisis|selectionne) (?:ensuite )?l intention .* (?:ligne|exemple)s?$/.test(key)) {
+      return { instruction:true, message:'Cette ligne appartient à la notice. Retirez-la des exemples.' };
+    }
+    if (intent === 'recall' && /^(?:ajout(?:e|ez|er)|memorise|enregistre) .+ (?:a|dans) (?:ta |la |ma )?memoire\b/.test(key)) {
+      return { suggested:'remember', message:'Cette demande semble ajouter une information. Vérifiez la catégorie Mémoriser.' };
+    }
+    return null;
+  }
   function addExamples(state, multilineText, intent) {
     validIntent(intent);
     if (typeof multilineText !== 'string' || multilineText.length > LIMITS.examples * (LIMITS.example + 2)) fail('Le lot de formulations dépasse la limite autorisée.');
@@ -533,6 +544,8 @@
     lines.forEach(function (line) {
       var text = textValue(line, 'Exemple', LIMITS.example, false), key = normalized(text);
       if (text.indexOf('=') >= 0) fail('Le signe « = » ne crée pas d’équivalence. Écrivez chaque formulation seule, une par ligne, puis choisissez sa catégorie. Aucun exemple de ce lot n’a été ajouté.');
+      var issue = exampleIssue(text,intent);
+      if (issue && issue.instruction) fail(issue.message + ' « ' + text + ' »');
       if (!contentWords(text).length) fail('Cet exemple ne contient aucun mot exploitable.');
       if (isHeldout(text)) fail('Cette formulation appartient au petit jeu d’évaluation réservé. Choisissez une autre formulation.');
       if (known[key]) {
@@ -927,7 +940,7 @@
   return Object.freeze({ VERSION: VERSION, LIMITS: LIMITS, INTENTS: INTENTS, SEED_EXAMPLES: SEED_EXAMPLES,
     createState: createState, handleMessage: handleMessage, reply: handleMessage, previewMessage: previewMessage,
     handleGeneratedMessage: handleGeneratedMessage, referent: referent, train: train,
-    predict: predict, evaluate: evaluate, evaluateExamples: evaluateExamples, addExample: addExample, addExamples: addExamples,
+    predict: predict, evaluate: evaluate, evaluateExamples: evaluateExamples, exampleIssue: exampleIssue, addExample: addExample, addExamples: addExamples,
     addDocument: addDocument, removeDocument: removeDocument, refreshDocument: refreshDocument, exportState: exportState,
     importState: importState, runSelfTests: runSelfTests, recordEvent: recordEvent, appendTrainingRun: appendTrainingRun });
 }));

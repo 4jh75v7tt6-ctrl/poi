@@ -156,7 +156,7 @@
     var wanted = tokens(query), valid = (Array.isArray(facts) ? facts : []).filter(function (fact) { return fact && fact.author === 'user' && typeof fact.key === 'string' && typeof fact.value === 'string'; });
     var ranked = valid.map(function (fact, index) { var known = new Set(tokens(fact.key + ' ' + fact.value)); return { fact: fact, index: index, score: wanted.filter(function (word) { return known.has(word); }).length }; }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
     var chosen = [], length = 0, shortened = 0;
-    ranked.slice(0, LIMITS.facts).forEach(function (entry) {
+    ranked.filter(function (entry) { return entry.score > 0; }).slice(0, LIMITS.facts).forEach(function (entry) {
       var data = { author: 'user', key: bounded(entry.fact.key, 80), value: bounded(entry.fact.value, 500) }, cost = safeJSON(data).length + 2;
       if (length + cost <= maximum) { chosen.push(data); length += cost; if (data.key.length < entry.fact.key.length || data.value.length < entry.fact.value.length) shortened++; }
     });
@@ -171,6 +171,12 @@
       if (Array.isArray(message.citations) && message.citations.some(function (citation) { return selectedIds.indexOf(citation.documentId) < 0; })) return false;
       return true;
     });
+    // A new scene supplies its own facts. Earlier answers to similar questions
+    // are especially misleading when one object or attribute has changed.
+    var scene = normalize(query);
+    if (/\b(?:il y a|je vois|j ai|contient|contiennent|se trouvent|se trouve)\b/.test(scene) && /\b(?:quel|quelle|quels|quelles|lequel|laquelle|qui|combien|de quelle)\b/.test(scene)) {
+      return {items:[],total:valid.length,shortened:0};
+    }
     if (valid.length && valid[valid.length - 1].role === 'user' && valid[valid.length - 1].text === query) valid = valid.slice(0, -1);
     var chosen = [], length = 0, shortened = 0;
     valid.slice(-LIMITS.messages).reverse().forEach(function (message) {

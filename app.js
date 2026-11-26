@@ -324,6 +324,22 @@
       main.appendChild(el('p', '', example.text)); meta.appendChild(el('span', 'category', category(example.intent))); meta.appendChild(el('span', '', example.origin === 'starter' ? 'Exemple de départ' : 'Ajouté par vous'));
       if (example.origin === 'user') meta.appendChild(el('span', '', !state.model ? 'À entraîner' : !coverage.known ? 'Présence dans le modèle inconnue' : coverage.keys.has(exampleKey(example)) ? 'Dans les données du modèle actif' : 'Pas encore dans le modèle actif'));
       if (example.text.indexOf('=') >= 0) meta.appendChild(el('span', 'input-error', 'Exemple composé : remplacez-le par des formulations séparées.'));
+      var issue = example.origin === 'user' && Core.exampleIssue(example.text,example.intent);
+      if (issue) meta.appendChild(el('span','input-error',issue.message));
+      if (issue && issue.suggested) {
+        var change = el('button','text-button','Reclasser en ' + category(issue.suggested));
+        change.type = 'button';
+        change.addEventListener('click',async function () {
+          if (!await confirmAction('Reclasser cet exemple ?',example.text + ' → ' + category(issue.suggested),'Reclasser')) return;
+          if (!state.examples.includes(example)) return;
+          var prior = example.intent;
+          example.intent = issue.suggested;
+          note('example_reclassified','user',example.text + ' : ' + prior + ' → ' + example.intent);
+          if (candidate) discardCandidate('Les étiquettes ont été révisées.');
+          renderExamples(); renderStats(); await save();
+        });
+        meta.appendChild(change);
+      }
       main.appendChild(meta); row.appendChild(main);
       var remove = el('button', 'icon-button'); remove.type = 'button'; remove.setAttribute('aria-label', 'Retirer l’exemple : ' + example.text); remove.appendChild(icon('trash'));
       remove.addEventListener('click', async function () {
@@ -620,9 +636,9 @@
     [[candidate.before, 'Version actuelle'], [candidate.after, 'Nouvelle version']].forEach(function (pair) { var box = el('div'); box.appendChild(el('small', '', pair[1])); box.appendChild(el('strong', '', pair[0].correct + ' / ' + pair[0].total)); box.appendChild(el('small', '', 'sur le jeu de contrôle')); metrics.appendChild(box); }); target.appendChild(metrics);
     target.appendChild(el('p', 'help-text', 'Erreur sur les exemples d’apprentissage : ' + candidate.metrics.lossBefore.toFixed(3) + ' → ' + candidate.metrics.lossAfter.toFixed(3) + '. Calcul effectué en ' + Math.round(candidate.metrics.durationMs) + ' ms dans cette session.'));
     target.appendChild(personalComparisonView(personalComparison()));
-    var regression = candidate.after.correct < candidate.before.correct;
+    var regression = lostControls(candidate.before,candidate.after).length > 0;
     if (regression) {
-      target.appendChild(el('p', 'notice notice-warning', 'Cette version réussit moins de contrôles. Examinez les changements avant de choisir de l’adopter. La version actuelle sera conservée pour permettre un retour.'));
+      target.appendChild(el('p', 'notice notice-warning', 'Cette version échoue à au moins un contrôle réussi auparavant. Examinez les changements avant de choisir de l’adopter. La version actuelle sera conservée pour permettre un retour.'));
       var lost = lostControls(candidate.before, candidate.after), list = el('ul', 'lost-controls');
       lost.forEach(function (result) { list.appendChild(el('li', '', 'N’est plus reconnue correctement : « ' + result.text + ' »')); }); target.appendChild(list);
     }
@@ -876,7 +892,16 @@
       var text = $('example-text').value.trim(), feedback = $('example-feedback');
       try {
         if (text.indexOf('=') >= 0) throw new Error('Séparez les formulations : écrivez « Yo », « Hello » ou « Salut », une par ligne, puis choisissez « Salutation ». « Yo=Bonjour » n’apprend pas « Yo » séparément. Aucun exemple ajouté.');
-        var result = Core.addExamples(state, text, $('example-intent').value);
+        var selectedIntent = $('example-intent').value;
+        var lines = text.split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
+        var issues = lines.map(function (line) { return Core.exampleIssue(line,selectedIntent); });
+        var instruction = issues.find(function (issue) { return issue && issue.instruction; });
+        if (instruction) throw Error(instruction.message);
+        if (lines.length > 1 || issues.some(Boolean)) {
+          var preview = lines.map(function (line,i) { return line + ' → ' + category(selectedIntent) + (issues[i] ? ' — ' + issues[i].message : ''); });
+          if (!await confirmAction('Vérifier les catégories',preview.join('\n'),'Valider ces exemples')) return;
+        }
+        var result = Core.addExamples(state, text, selectedIntent);
         var message = result.added + (result.added > 1 ? ' exemples ajoutés.' : ' exemple ajouté.');
         if (result.skipped) message += ' ' + result.skipped + (result.skipped > 1 ? ' doublons déjà présents ignorés.' : ' doublon déjà présent ignoré.');
         message += ' Entraînez puis adoptez une version pour utiliser vos nouveaux exemples.';
@@ -910,14 +935,14 @@
     $('adopt-button').addEventListener('click', async function () {
       if (!candidate) return;
       candidate.before = Core.evaluate(state.model);
-      var adopting = candidate, regression = adopting.after.correct < adopting.before.correct, personal = personalComparison();
+      var adopting = candidate, regression = lostControls(adopting.before,adopting.after).length > 0, personal = personalComparison();
       if (regression) {
         renderCandidate(); var lost = lostControls(adopting.before, adopting.after);
         var message = 'Cette version réussit ' + adopting.after.correct + ' / ' + adopting.after.total + ' contrôles, contre ' + adopting.before.correct + ' / ' + adopting.before.total + ' actuellement.';
         if (personal.after.total) message += '\n\nVos formulations : ' + personal.after.correct + ' / ' + personal.after.total + ' reconnues, contre ' + personal.before.correct + ' / ' + personal.before.total + ' actuellement.';
         if (lost.length) message += '\n\nNe sont plus reconnues correctement :\n' + lost.map(function (result) { return '• ' + result.text; }).join('\n');
         message += '\n\nLa version actuelle sera conservée. Vous pourrez y revenir avec « Revenir au modèle précédent » dans Atelier.';
-        if (!await confirmAction('Adopter malgré cette baisse ?', message, 'Adopter cette version')) return;
+        if (!await confirmAction('Adopter malgré le contrôle perdu ?', message, 'Adopter cette version')) return;
         if (!candidate || candidate.runId !== adopting.runId) return;
       }
       try {

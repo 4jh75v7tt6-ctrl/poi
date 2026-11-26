@@ -60,12 +60,15 @@ async function latestFile(fm, root, kind) {
   const versions = names.filter(name => name.startsWith(stem + '_') && name.endsWith('.json')
     && jobId.test(name.slice(stem.length + 1, -5))).sort().reverse();
   if (kind === 'corpus' && names.includes('POI_WORK_LANGAGE_CORRECTIONS_V1.json')) versions.push('POI_WORK_LANGAGE_CORRECTIONS_V1.json');
-  if (!versions.length) return null;
-  const path = fm.joinPath(stage, versions[0]);
-  await fm.downloadFileFromiCloud(path);
-  const data = JSON.parse(fm.readString(path));
-  if (data.schema !== schema) throw Error('Schéma du dernier fichier iCloud inattendu.');
-  return { name: versions[0], data };
+  for (const name of versions) {
+    const path = fm.joinPath(stage,name);
+    await fm.downloadFileFromiCloud(path);
+    const data = JSON.parse(fm.readString(path));
+    if (data.schema !== schema) throw Error('Schéma inattendu dans ' + name);
+    if (kind === 'corpus' && Array.isArray(data.records) && !data.records.length) continue;
+    return {name,data};
+  }
+  return null;
 }
 
 async function displayError(message) {
@@ -85,9 +88,21 @@ async function run() {
     if (!raw || raw.length > 5100000) throw Error('Transfert absent ou trop volumineux.');
     const pack = JSON.parse(raw);
     if (pack.schema !== 'poi.icloud-handoff.v1' || pack.token !== params.handoff || !Array.isArray(pack.jobs) || !pack.jobs.length || pack.jobs.length > 100) throw Error('Le presse-papiers ne correspond plus au transfert demandé.');
-    for (const job of pack.jobs) await saveJob(fm, root, job);
+    const receipt = {schema:'poi.icloud-receipt.v1', token:pack.token, saved:[]};
+    let failed = '';
+    for (const job of pack.jobs) {
+      try { await saveJob(fm,root,job); receipt.saved.push(job.id); }
+      catch (error) { failed = String(error.message || error); break; }
+    }
+    const filename = 'POI_RECU_CLASSEMENT_' + pack.token + '.json';
+    const receiptPath = fm.joinPath(fm.joinPath(root,targets.diagnostic[0]),filename);
+    const encoded = JSON.stringify(receipt);
+    fm.writeString(receiptPath,encoded);
+    await fm.downloadFileFromiCloud(receiptPath);
+    if (fm.readString(receiptPath) !== encoded) throw Error('Relecture du reçu impossible.');
     if (Pasteboard.pasteString() === raw) Pasteboard.copyString('');
-    Safari.open(BASE + page + '#poi-saved=' + params.handoff);
+    if (failed) await displayError(receipt.saved.length + ' envoi(s) relu(s). Reprendre les suivants. ' + failed);
+    Safari.open(BASE + page + '#poi-receipt=' + encodeURIComponent(encoded));
     return;
   }
 
